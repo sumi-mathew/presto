@@ -14,6 +14,7 @@
 package com.facebook.presto.plugin.clickhouse;
 
 import com.clickhouse.jdbc.ClickHouseDriver;
+import com.facebook.presto.plugin.jdbc.JdbcIdentity;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -38,8 +39,8 @@ public class DriverConnectionFactory
         this(
                 driver,
                 config.getConnectionUrl(),
-                Optional.ofNullable(config.getUserCredential()),
-                Optional.ofNullable(config.getPasswordCredential()),
+                Optional.ofNullable(config.getUserCredentialName()),
+                Optional.ofNullable(config.getPasswordCredentialName()),
                 basicConnectionProperties(config));
     }
 
@@ -69,7 +70,7 @@ public class DriverConnectionFactory
     }
 
     @Override
-    public Connection openConnection(ClickHouseIdentity identity)
+    public Connection openConnection(JdbcIdentity identity)
             throws SQLException
     {
         Properties updatedConnectionProperties;

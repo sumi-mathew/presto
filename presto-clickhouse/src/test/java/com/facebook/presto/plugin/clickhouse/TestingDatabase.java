@@ -39,7 +39,7 @@ final class TestingDatabase
     {
         testingClickHouseServer = new TestingClickHouseServer();
         Properties connectionProperties = new Properties();
-        clickHouseClient = new ClickHouseClient(new ClickHouseConnectorId(CONNECTOR_ID),
+        clickHouseClient = new ClickHouseClient(new com.facebook.presto.plugin.jdbc.JdbcConnectorId(CONNECTOR_ID),
                 new ClickHouseConfig(),
                 new DriverConnectionFactory(new ClickHouseDriver(),
                         testingClickHouseServer.getJdbcUrl(),
