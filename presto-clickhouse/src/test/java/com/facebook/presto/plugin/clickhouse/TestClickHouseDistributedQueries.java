@@ -387,7 +387,7 @@ public class TestClickHouseDistributedQueries
                         "   \"orderdate\" date,\n" +
                         "   \"orderpriority\" varchar,\n" +
                         "   \"clerk\" varchar,\n" +
-                        "   \"shippriority\" integer,\n" +
+                        "   \"shippriority\" bigint,\n" +
                         "   \"comment\" varchar\n" +
                         ")");
     }
@@ -403,7 +403,7 @@ public class TestClickHouseDistributedQueries
                 .row("orderdate", "date", "", "", null, null, null)
                 .row("orderpriority", "varchar", "", "", null, null, 2147483647L)
                 .row("clerk", "varchar", "", "", null, null, 2147483647L)
-                .row("shippriority", "integer", "", "", 10L, null, null)
+                .row("shippriority", "bigint", "", "", 19L, null, null)
                 .row("comment", "varchar", "", "", null, null, 2147483647L)
                 .build();
         MaterializedResult actualColumns = computeActual("DESCRIBE orders");

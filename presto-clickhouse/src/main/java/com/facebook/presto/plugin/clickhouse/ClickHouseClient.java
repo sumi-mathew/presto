@@ -389,9 +389,12 @@ public class ClickHouseClient
                 "  WHEN lower(type) LIKE '%date%' THEN 91 " +  // DATE
                 // Integer types - check larger unsigned types first
                 "  WHEN lower(type) LIKE '%uint64%' THEN -5 " +  // BIGINT (may overflow, but best available JDBC type)
-                "  WHEN lower(type) LIKE '%int64%' OR lower(type) LIKE '%uint32%' THEN -5 " +  // BIGINT
-                "  WHEN lower(type) LIKE '%int32%' OR lower(type) LIKE '%uint16%' THEN 4 " +  // INTEGER
-                "  WHEN lower(type) LIKE '%int16%' OR lower(type) LIKE '%uint8%' THEN 5 " +  // SMALLINT
+                "  WHEN lower(type) LIKE '%int64%' THEN -5 " +  // BIGINT
+                "  WHEN lower(type) LIKE '%uint32%' THEN -5 " +  // BIGINT (UInt32 needs BIGINT to avoid overflow)
+                "  WHEN lower(type) LIKE '%int32%' THEN -5 " +  // BIGINT (Map Int32 to BIGINT for consistency with UInt32)
+                "  WHEN lower(type) LIKE '%uint16%' THEN 4 " +  // INTEGER (UInt16 fits in INTEGER)
+                "  WHEN lower(type) LIKE '%int16%' THEN 5 " +  // SMALLINT
+                "  WHEN lower(type) LIKE '%uint8%' THEN 5 " +  // SMALLINT (UInt8 fits in SMALLINT)
                 "  WHEN lower(type) LIKE '%int8%' THEN -6 " +  // TINYINT
                 // Floating point types
                 "  WHEN lower(type) LIKE '%float64%' THEN 8 " +  // DOUBLE
@@ -419,12 +422,17 @@ public class ClickHouseClient
                 // Integer types - larger types first
                 "  WHEN lower(type) LIKE '%uint64%' THEN 20 " +  // Max digits for UInt64
                 "  WHEN lower(type) LIKE '%int64%' OR lower(type) LIKE '%uint32%' THEN 19 " +
-                "  WHEN lower(type) LIKE '%int32%' OR lower(type) LIKE '%uint16%' THEN 10 " +
-                "  WHEN lower(type) LIKE '%int16%' OR lower(type) LIKE '%uint8%' THEN 5 " +
+                "  WHEN lower(type) LIKE '%int32%' THEN 10 " +
+                "  WHEN lower(type) LIKE '%uint16%' THEN 5 " +
+                "  WHEN lower(type) LIKE '%int16%' THEN 5 " +
+                "  WHEN lower(type) LIKE '%uint8%' THEN 3 " +
                 "  WHEN lower(type) LIKE '%int8%' THEN 3 " +
                 // Floating point types
                 "  WHEN lower(type) LIKE '%float64%' THEN 22 " +
                 "  WHEN lower(type) LIKE '%float32%' THEN 12 " +
+                // FixedString types - extract length from FixedString(N)
+                "  WHEN lower(type) LIKE 'fixedstring(%' THEN " +
+                "    CAST(replaceRegexpOne(type, '^(?i)FixedString\\\\(([0-9]+)\\\\).*$', '\\\\1') AS Int32) " +
                 // String types - use Integer.MAX_VALUE for unbounded strings
                 "  WHEN lower(type) LIKE '%string%' THEN 2147483647 " +
                 // Default to max for unknown types
