@@ -45,7 +45,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.Iterables.getOnlyElement;
+import static com.google.common.collect.MoreCollectors.onlyElement;
 import static java.util.stream.Collectors.toSet;
 
 public class RewriteWriterTarget
@@ -148,7 +148,7 @@ public class RewriteWriterTarget
                 Set<Optional<WriterTarget>> writerTargets = node.getSources().stream()
                         .map(this::getWriterTarget)
                         .collect(toSet());
-                return getOnlyElement(writerTargets);
+                return writerTargets.stream().collect(onlyElement());
             }
 
             return Optional.empty();

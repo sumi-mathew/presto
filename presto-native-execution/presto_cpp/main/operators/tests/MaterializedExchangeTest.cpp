@@ -16,6 +16,8 @@
 
 #include <boost/range/algorithm/find_if.hpp>
 
+#include "presto_cpp/main/common/Configs.h"
+#include "presto_cpp/main/common/tests/MutableConfigs.h"
 #include "presto_cpp/main/operators/LocalShuffle.h"
 #include "presto_cpp/main/operators/MaterializedExchange.h"
 #include "presto_cpp/main/operators/MaterializedOutput.h"
@@ -132,6 +134,30 @@ class FailingCloseShuffleWriter : public ShuffleWriter {
   std::shared_ptr<ShuffleWriter> delegate_;
 };
 
+// Factory that wraps another factory's writer in FailingCloseShuffleWriter.
+class FailingCloseShuffleFactory : public ShuffleInterfaceFactory {
+ public:
+  explicit FailingCloseShuffleFactory(ShuffleInterfaceFactory* delegate)
+      : delegate_(delegate) {}
+
+  std::shared_ptr<ShuffleReader> createReader(
+      const std::string& serializedShuffleInfo,
+      int32_t partition,
+      velox::memory::MemoryPool* pool) override {
+    return delegate_->createReader(serializedShuffleInfo, partition, pool);
+  }
+
+  std::shared_ptr<ShuffleWriter> createWriter(
+      const std::string& serializedShuffleInfo,
+      velox::memory::MemoryPool* pool) override {
+    return std::make_shared<FailingCloseShuffleWriter>(
+        delegate_->createWriter(serializedShuffleInfo, pool));
+  }
+
+ private:
+  ShuffleInterfaceFactory* delegate_;
+};
+
 } // namespace
 
 class MaterializedExchangeTest : public exec::test::OperatorTestBase {
@@ -194,29 +220,12 @@ class MaterializedExchangeTest : public exec::test::OperatorTestBase {
     auto dataType = asRowType(data[0]->type());
     auto writeInfoStr =
         localShuffleWriteInfo(tempDir_->getPath(), numPartitions);
-    auto writeInfo = LocalShuffleWriteInfo::deserialize(writeInfoStr);
-
-    // Create writer directly with a small per-partition buffer to avoid OOM
-    // in unit tests (the factory default of 256MB is too large for tests with
-    // many partitions).
-    constexpr uint64_t kMaxBytesPerPartition = 1 << 20; // 1MB
-    auto writer = std::make_shared<LocalShuffleWriter>(
-        writeInfo.rootPath,
-        writeInfo.queryId,
-        writeInfo.shuffleId,
-        writeInfo.numPartitions,
-        kMaxBytesPerPartition,
-        writeInfo.sortedShuffle,
-        pool());
-
-    // Create a writer memory pool for MaterializedOutputBuffer, scoped under
-    // the test's root pool to avoid consuming shared arbitrator capacity.
-    auto writerPool = rootPool_->addLeafChild("writerPool");
-
-    // Create the shared MaterializedOutputBuffer.
-    constexpr size_t kMaxBufferedBytes = 1 << 20; // 1MB
     auto buffer = std::make_shared<MaterializedOutputBuffer>(
-        numPartitions, writer, writerPool, kMaxBufferedBytes);
+        numPartitions,
+        writeInfoStr,
+        ShuffleInterfaceFactory::factory(shuffleName_),
+        "test.0.0.0.0",
+        rootPool_.get());
 
     // Build partition key expressions on column 0.
     std::vector<core::TypedExprPtr> keys{
@@ -237,14 +246,16 @@ class MaterializedExchangeTest : public exec::test::OperatorTestBase {
         dataType,
         partitionFunctionSpec,
         replicateNullsAndAny,
-        valuesNode,
-        buffer);
+        ShuffleWriterMetadata{},
+        valuesNode);
 
     auto taskId = makeTaskId("write", 0);
+    MaterializedOutputBuffer::registerBuffer(taskId, buffer);
     auto task = makeTask(taskId, exchangeWriteNode, 0);
     task->start(numDrivers);
 
     EXPECT_TRUE(exec::test::waitForTaskCompletion(task.get(), 10'000'000));
+    MaterializedOutputBuffer::removeBuffer(taskId);
 
     // Build expected output: each driver processes the full input.
     std::vector<RowVectorPtr> expected;
@@ -407,6 +418,70 @@ TEST_F(MaterializedExchangeTest, emptyInput) {
   cleanupDirectory(tempDir_->getPath());
 }
 
+// Row-count-only output: the MaterializedOutputNode projects to a ZERO-column
+// output type (e.g. a count-only shuffle after a dedupe). CompactRow::
+// fixedRowSize(ROW({})) == 0, so each serialized row is zero bytes and the
+// flat buffer would never be allocated. serializeFixedWidthRows() and
+// buildRowGroup() index into the flat buffer unconditionally, so it must be
+// non-null. The partition routing still runs on the (non-empty) source
+// columns, so all input rows must round-trip as zero-column rows.
+TEST_F(MaterializedExchangeTest, zeroColumnOutput) {
+  auto data = makeRowVector({
+      makeFlatVector<int32_t>({1, 2, 3, 4, 5, 6}),
+  });
+  auto sourceType = asRowType(data->type());
+  auto emptyOutputType = ROW({}, {});
+
+  const int numPartitions = 4;
+  const int numDrivers = 1;
+
+  auto writeInfoStr = localShuffleWriteInfo(tempDir_->getPath(), numPartitions);
+  auto buffer = std::make_shared<MaterializedOutputBuffer>(
+      numPartitions,
+      writeInfoStr,
+      ShuffleInterfaceFactory::factory(shuffleName_),
+      "zerocol.0.0.0.0",
+      rootPool_.get());
+
+  // Partition on the (non-empty) source column even though the projected
+  // output has no columns.
+  std::vector<core::TypedExprPtr> keys{
+      std::make_shared<core::FieldAccessTypedExpr>(
+          sourceType->childAt(0), sourceType->nameOf(0))};
+  auto partitionFunctionSpec =
+      std::make_shared<exec::HashPartitionFunctionSpec>(
+          sourceType, std::vector<column_index_t>{0});
+
+  auto valuesNode = exec::test::PlanBuilder().values({data}, true).planNode();
+  auto exchangeWriteNode = std::make_shared<MaterializedOutputNode>(
+      "exchangeWrite",
+      keys,
+      numPartitions,
+      emptyOutputType,
+      partitionFunctionSpec,
+      /*replicateNullsAndAny=*/false,
+      ShuffleWriterMetadata{},
+      valuesNode);
+
+  auto taskId = makeTaskId("write", 0);
+  MaterializedOutputBuffer::registerBuffer(taskId, buffer);
+  auto task = makeTask(taskId, exchangeWriteNode, 0);
+  task->start(numDrivers);
+
+  EXPECT_TRUE(exec::test::waitForTaskCompletion(task.get(), 10'000'000));
+  MaterializedOutputBuffer::removeBuffer(taskId);
+
+  // Every input row must come back as a zero-column row across all partitions.
+  auto actual = runExchangeRead(numPartitions, emptyOutputType);
+  int64_t totalRows = 0;
+  for (const auto& vec : actual) {
+    EXPECT_EQ(vec->type()->size(), 0);
+    totalRows += vec->size();
+  }
+  EXPECT_EQ(totalRows, data->size());
+  cleanupDirectory(tempDir_->getPath());
+}
+
 // Verify that buffered RowGroups are tracked through the pool. With a
 // constrained pool, enqueuing too much data without draining should fail.
 TEST_F(MaterializedExchangeTest, bufferMemoryTracking) {
@@ -415,21 +490,27 @@ TEST_F(MaterializedExchangeTest, bufferMemoryTracking) {
   // if drain doesn't happen (100 × 10KB × multiple rounds).
   constexpr int64_t kPoolCapacity = 2L * 1024 * 1024;
 
-  auto rootPool =
-      memory::memoryManager()->addRootPool("bufferMemoryTest", kPoolCapacity);
-  auto bufferPool = rootPool->addLeafChild("buffer");
+  auto rootPool = memory::memoryManager()->addRootPool(
+      "bufferMemoryTest", kPoolCapacity, memory::MemoryReclaimer::create());
 
   auto shuffleDir = exec::test::TempDirectoryPath::create();
   auto writeInfo = localShuffleWriteInfo(shuffleDir->getPath(), numPartitions);
-  auto writer = ShuffleInterfaceFactory::factory(shuffleName_)
-                    ->createWriter(writeInfo, pool());
 
+  facebook::presto::test::setupMutableSystemConfig();
+  SystemConfig::instance()->setValue(
+      std::string(
+          SystemConfig::
+              kExchangeMaterializationOutputBufferPerPartitionMaxBytes),
+      "51200");
+  SystemConfig::instance()->setValue(
+      std::string(SystemConfig::kExchangeMaterializationOutputBufferMaxBytes),
+      std::to_string(100L * 1024 * 1024));
   auto buffer = std::make_shared<MaterializedOutputBuffer>(
       numPartitions,
-      std::shared_ptr<ShuffleWriter>(std::move(writer)),
-      std::move(bufferPool),
-      /*maxBufferedBytes=*/100L * 1024 * 1024,
-      /*partitionDrainThreshold=*/50L * 1024);
+      writeInfo,
+      ShuffleInterfaceFactory::factory(shuffleName_),
+      "memtest.0.0.0.0",
+      rootPool.get());
 
   // Enqueue 10KB per partition across many rounds. Pool has 2MB, drain
   // threshold is 50KB so partitions won't drain until 50KB accumulated.
@@ -442,8 +523,7 @@ TEST_F(MaterializedExchangeTest, bufferMemoryTracking) {
         auto iobuf = buffer->allocateTrackedIOBuf(10 * 1024);
         std::memset(iobuf->writableData(), 'x', 10 * 1024);
         iobuf->append(10 * 1024);
-        velox::ContinueFuture future;
-        buffer->enqueue(p, std::move(iobuf), &future);
+        buffer->enqueue(p, std::move(iobuf));
         ++totalEnqueued;
       } catch (const velox::VeloxRuntimeError&) {
         threw = true;
@@ -561,26 +641,16 @@ TEST_F(MaterializedExchangeTest, assertBufferCloseExceptionsArePropagated) {
   auto dataType = asRowType(data->type());
 
   auto writeInfoStr = localShuffleWriteInfo(tempDir_->getPath(), numPartitions);
-  auto writeInfo = LocalShuffleWriteInfo::deserialize(writeInfoStr);
 
-  constexpr uint64_t kMaxBytesPerPartition = 1 << 20;
-  auto realWriter = std::make_shared<LocalShuffleWriter>(
-      writeInfo.rootPath,
-      writeInfo.queryId,
-      writeInfo.shuffleId,
-      writeInfo.numPartitions,
-      kMaxBytesPerPartition,
-      writeInfo.sortedShuffle,
-      pool());
+  auto* realFactory = ShuffleInterfaceFactory::factory(shuffleName_);
+  FailingCloseShuffleFactory failingFactory(realFactory);
 
-  auto failingWriter =
-      std::make_shared<FailingCloseShuffleWriter>(std::move(realWriter));
-
-  auto writerPool = rootPool_->addLeafChild("writerPool");
-
-  constexpr size_t kMaxBufferedBytes = 1 << 20;
   auto buffer = std::make_shared<MaterializedOutputBuffer>(
-      numPartitions, failingWriter, writerPool, kMaxBufferedBytes);
+      numPartitions,
+      writeInfoStr,
+      &failingFactory,
+      "failtest.0.0.0.0",
+      rootPool_.get());
 
   std::vector<core::TypedExprPtr> keys{
       std::make_shared<core::FieldAccessTypedExpr>(
@@ -598,17 +668,90 @@ TEST_F(MaterializedExchangeTest, assertBufferCloseExceptionsArePropagated) {
       dataType,
       partitionFunctionSpec,
       false,
-      valuesNode,
-      buffer);
+      ShuffleWriterMetadata{},
+      valuesNode);
 
   auto taskId = makeTaskId("write", 0);
+  MaterializedOutputBuffer::registerBuffer(taskId, buffer);
   auto task = makeTask(taskId, exchangeWriteNode, 0);
   task->start(numDrivers);
 
   EXPECT_TRUE(exec::test::waitForTaskFailure(task.get(), 10'000'000))
       << "Task should fail when buffer noMoreData() throws, not succeed silently";
+  MaterializedOutputBuffer::removeBuffer(taskId);
 
   cleanupDirectory(tempDir_->getPath());
+}
+
+TEST_F(MaterializedExchangeTest, enqueueAfterNoMoreDataThrows) {
+  const int32_t numPartitions = 2;
+  auto shuffleDir = exec::test::TempDirectoryPath::create();
+  auto writeInfo = localShuffleWriteInfo(shuffleDir->getPath(), numPartitions);
+
+  auto rootPool = memory::memoryManager()->addRootPool(
+      "enqueueAfterClose", 64L << 20, memory::MemoryReclaimer::create());
+
+  auto buffer = std::make_shared<MaterializedOutputBuffer>(
+      numPartitions,
+      writeInfo,
+      ShuffleInterfaceFactory::factory(shuffleName_),
+      "test.0.0.0.0",
+      rootPool.get());
+
+  auto iobuf = buffer->allocateTrackedIOBuf(1024);
+  std::memset(iobuf->writableData(), 'x', 1024);
+  iobuf->append(1024);
+  buffer->enqueue(0, std::move(iobuf));
+
+  buffer->noMoreData();
+  EXPECT_EQ(buffer->state(), MaterializedOutputBuffer::State::kClosed);
+
+  auto iobuf2 = folly::IOBuf::create(64);
+  std::memset(iobuf2->writableData(), 'y', 64);
+  iobuf2->append(64);
+  VELOX_ASSERT_THROW(
+      buffer->enqueue(0, std::move(iobuf2)),
+      "enqueue called after noMoreData()");
+
+  cleanupDirectory(shuffleDir->getPath());
+}
+
+TEST_F(MaterializedExchangeTest, abortFromActiveState) {
+  const int32_t numPartitions = 2;
+  auto shuffleDir = exec::test::TempDirectoryPath::create();
+  auto writeInfo = localShuffleWriteInfo(shuffleDir->getPath(), numPartitions);
+
+  auto rootPool = memory::memoryManager()->addRootPool(
+      "abortActive", 64L << 20, memory::MemoryReclaimer::create());
+
+  auto buffer = std::make_shared<MaterializedOutputBuffer>(
+      numPartitions,
+      writeInfo,
+      ShuffleInterfaceFactory::factory(shuffleName_),
+      "test.0.0.0.0",
+      rootPool.get());
+
+  auto iobuf = buffer->allocateTrackedIOBuf(1024);
+  std::memset(iobuf->writableData(), 'x', 1024);
+  iobuf->append(1024);
+  buffer->enqueue(0, std::move(iobuf));
+  EXPECT_GT(buffer->bufferedBytes(), 0);
+
+  buffer->abort();
+  EXPECT_EQ(buffer->state(), MaterializedOutputBuffer::State::kAborted);
+  EXPECT_EQ(buffer->bufferedBytes(), 0);
+
+  // Second abort is a no-op (CAS fails, already kAborted).
+  buffer->abort();
+  EXPECT_EQ(buffer->state(), MaterializedOutputBuffer::State::kAborted);
+
+  // Enqueue after abort is silently dropped (not a crash).
+  auto iobuf2 = folly::IOBuf::create(64);
+  std::memset(iobuf2->writableData(), 'y', 64);
+  iobuf2->append(64);
+  buffer->enqueue(0, std::move(iobuf2));
+
+  cleanupDirectory(shuffleDir->getPath());
 }
 
 } // namespace facebook::presto::operators::test

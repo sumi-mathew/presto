@@ -43,7 +43,7 @@ import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.Iterables.getOnlyElement;
+import static com.google.common.collect.MoreCollectors.onlyElement;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
@@ -99,7 +99,7 @@ public final class FunctionSignatureMatcher
         }
 
         if (applicableFunctions.size() == 1) {
-            return Optional.of(getOnlyElement(applicableFunctions).getBoundSignature());
+            return Optional.of(applicableFunctions.stream().collect(onlyElement()).getBoundSignature());
         }
 
         List<Signature> deduplicatedSignatures = applicableFunctions.stream()
@@ -107,7 +107,7 @@ public final class FunctionSignatureMatcher
                 .distinct()
                 .collect(toImmutableList());
         if (deduplicatedSignatures.size() == 1) {
-            return Optional.of(getOnlyElement(deduplicatedSignatures));
+            return Optional.of(deduplicatedSignatures.stream().collect(onlyElement()));
         }
 
         throw new PrestoException(AMBIGUOUS_FUNCTION_CALL, getErrorMessage(applicableFunctions));
@@ -131,7 +131,7 @@ public final class FunctionSignatureMatcher
         }
 
         if (applicableFunctions.size() == 1) {
-            return Optional.of(getOnlyElement(applicableFunctions).getBoundSignature());
+            return Optional.of(applicableFunctions.stream().collect(onlyElement()).getBoundSignature());
         }
 
         throw new PrestoException(AMBIGUOUS_FUNCTION_CALL, getErrorMessage(applicableFunctions));

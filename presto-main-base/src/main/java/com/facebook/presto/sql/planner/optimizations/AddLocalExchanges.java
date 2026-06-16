@@ -122,7 +122,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static com.google.common.collect.Iterables.getOnlyElement;
+import static com.google.common.collect.MoreCollectors.onlyElement;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
@@ -275,7 +275,7 @@ public class AddLocalExchanges
                                     new SortNode(
                                             sortNode.getSourceLocation(),
                                             sortNode.getId(),
-                                            getOnlyElement(sortNode.getSources()),
+                                            sortNode.getSources().stream().collect(onlyElement()),
                                             sortNode.getOrderingScheme(),
                                             true,
                                             sortNode.getPartitionBy()),

@@ -28,6 +28,7 @@ import com.facebook.presto.spi.MaterializedViewStaleReadBehavior;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.function.FunctionMetadata;
 import com.facebook.presto.spi.security.ViewSecurity;
+import com.facebook.presto.sql.planner.iterative.rule.materializedview.MaterializedViewRewriteStrategy;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
@@ -126,6 +127,7 @@ public class FeaturesConfig
     private int optimizeMetadataQueriesCallThreshold = 100;
     private boolean optimizeHashGeneration = true;
     private boolean enableIntermediateAggregations;
+    private boolean enableParallelizeChainedAggregations;
     private boolean optimizeCaseExpressionPredicate;
     private boolean pushTableWriteThroughUnion = true;
     private CompressionCodec exchangeCompressionCodec = CompressionCodec.NONE;
@@ -248,6 +250,8 @@ public class FeaturesConfig
     private boolean materializedViewAllowFullRefreshEnabled;
     private MaterializedViewRefreshType materializedViewDefaultRefreshType = MaterializedViewRefreshType.FULL;
     private MaterializedViewStaleReadBehavior materializedViewStaleReadBehavior = MaterializedViewStaleReadBehavior.USE_VIEW_QUERY;
+    private MaterializedViewRewriteStrategy materializedViewStitchingStrategy = MaterializedViewRewriteStrategy.ALWAYS;
+    private MaterializedViewRewriteStrategy materializedViewIncrementalRefreshStrategy = MaterializedViewRewriteStrategy.ALWAYS;
 
     private AggregationIfToFilterRewriteStrategy aggregationIfToFilterRewriteStrategy = AggregationIfToFilterRewriteStrategy.DISABLED;
     private String analyzerType = "BUILTIN";
@@ -304,7 +308,8 @@ public class FeaturesConfig
     private boolean pullUpExpressionFromLambda;
     private boolean rewriteConstantArrayContainsToIn;
     private boolean rewriteExpressionWithConstantVariable = true;
-    private boolean rewriteRowConstructorInToDisjunction;
+    private boolean optimizeRowInPredicate;
+    private boolean pushFilterThroughSelectingAggregation;
     private boolean optimizeConditionalApproxDistinct = true;
 
     private boolean preProcessMetadataCalls;
@@ -351,6 +356,7 @@ public class FeaturesConfig
     private double tableScanShuffleParallelismThreshold = 0.1;
     private ShuffleForTableScanStrategy tableScanShuffleStrategy = ShuffleForTableScanStrategy.DISABLED;
     private boolean skipPushdownThroughExchangeForRemoteProjection;
+    private boolean pullConstantProjectionAboveExchange;
     private String remoteFunctionNamesForFixedParallelism = "";
     private int remoteFunctionFixedParallelismTaskCount = 10;
 
@@ -1694,6 +1700,19 @@ public class FeaturesConfig
         return this;
     }
 
+    public boolean isEnableParallelizeChainedAggregations()
+    {
+        return enableParallelizeChainedAggregations;
+    }
+
+    @Config("optimizer.parallelize-chained-aggregation")
+    @ConfigDescription("Insert a local round-robin exchange above the inner aggregation in chained aggregations to parallelize the outer PARTIAL across local drivers")
+    public FeaturesConfig setEnableParallelizeChainedAggregations(boolean enableParallelizeChainedAggregations)
+    {
+        this.enableParallelizeChainedAggregations = enableParallelizeChainedAggregations;
+        return this;
+    }
+
     public boolean isPushAggregationThroughJoin()
     {
         return pushAggregationThroughJoin;
@@ -2459,6 +2478,32 @@ public class FeaturesConfig
         return this;
     }
 
+    public MaterializedViewRewriteStrategy getMaterializedViewStitchingStrategy()
+    {
+        return materializedViewStitchingStrategy;
+    }
+
+    @Config("materialized-view-stitching-strategy")
+    @ConfigDescription("Controls when query-time stitching of partially stale materialized views fires (ALWAYS, NEVER, or AUTOMATIC for cost-based)")
+    public FeaturesConfig setMaterializedViewStitchingStrategy(MaterializedViewRewriteStrategy value)
+    {
+        this.materializedViewStitchingStrategy = value;
+        return this;
+    }
+
+    public MaterializedViewRewriteStrategy getMaterializedViewIncrementalRefreshStrategy()
+    {
+        return materializedViewIncrementalRefreshStrategy;
+    }
+
+    @Config("materialized-view-incremental-refresh-strategy")
+    @ConfigDescription("Controls when incremental refresh of materialized views fires (ALWAYS, NEVER, or AUTOMATIC for cost-based)")
+    public FeaturesConfig setMaterializedViewIncrementalRefreshStrategy(MaterializedViewRewriteStrategy value)
+    {
+        this.materializedViewIncrementalRefreshStrategy = value;
+        return this;
+    }
+
     public boolean isVerboseRuntimeStatsEnabled()
     {
         return verboseRuntimeStatsEnabled;
@@ -3217,16 +3262,29 @@ public class FeaturesConfig
         return this;
     }
 
-    public boolean isRewriteRowConstructorInToDisjunction()
+    public boolean isOptimizeRowInPredicate()
     {
-        return this.rewriteRowConstructorInToDisjunction;
+        return this.optimizeRowInPredicate;
     }
 
-    @Config("optimizer.rewrite-row-constructor-in-to-disjunction")
-    @ConfigDescription("Rewrite ROW(...) IN (ROW(...), ...) into OR of ANDs for partition pruning")
-    public FeaturesConfig setRewriteRowConstructorInToDisjunction(boolean rewriteRowConstructorInToDisjunction)
+    @Config("optimizer.optimize-row-in-predicate")
+    @ConfigDescription("Optimize ROW(...) IN/NOT IN (ROW(...), ...) by adding per-column IN/NOT IN predicates to help the domain translator extract constraints")
+    public FeaturesConfig setOptimizeRowInPredicate(boolean optimizeRowInPredicate)
     {
-        this.rewriteRowConstructorInToDisjunction = rewriteRowConstructorInToDisjunction;
+        this.optimizeRowInPredicate = optimizeRowInPredicate;
+        return this;
+    }
+
+    public boolean isPushFilterThroughSelectingAggregation()
+    {
+        return this.pushFilterThroughSelectingAggregation;
+    }
+
+    @Config("optimizer.push-filter-through-selecting-aggregation")
+    @ConfigDescription("Push HAVING-style filter on MAX/MIN/ARBITRARY aggregate output below the aggregation when the predicate direction matches the aggregate")
+    public FeaturesConfig setPushFilterThroughSelectingAggregation(boolean pushFilterThroughSelectingAggregation)
+    {
+        this.pushFilterThroughSelectingAggregation = pushFilterThroughSelectingAggregation;
         return this;
     }
 
@@ -3615,6 +3673,19 @@ public class FeaturesConfig
     public FeaturesConfig setSkipPushdownThroughExchangeForRemoteProjection(boolean skipPushdownThroughExchangeForRemoteProjection)
     {
         this.skipPushdownThroughExchangeForRemoteProjection = skipPushdownThroughExchangeForRemoteProjection;
+        return this;
+    }
+
+    public boolean isPullConstantProjectionAboveExchange()
+    {
+        return pullConstantProjectionAboveExchange;
+    }
+
+    @Config("optimizer.pull-constant-projection-above-exchange")
+    @ConfigDescription("Pull constant assignments in projections above remote exchanges to reduce network I/O")
+    public FeaturesConfig setPullConstantProjectionAboveExchange(boolean pullConstantProjectionAboveExchange)
+    {
+        this.pullConstantProjectionAboveExchange = pullConstantProjectionAboveExchange;
         return this;
     }
 

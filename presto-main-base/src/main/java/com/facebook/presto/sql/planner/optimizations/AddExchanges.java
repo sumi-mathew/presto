@@ -175,7 +175,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.Iterables.getOnlyElement;
+import static com.google.common.collect.MoreCollectors.onlyElement;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
@@ -1679,7 +1679,7 @@ public class AddExchanges
 
         private PlanWithProperties planChild(PlanNode node, PreferredProperties preferredProperties)
         {
-            return accept(getOnlyElement(node.getSources()), preferredProperties);
+            return accept(node.getSources().stream().collect(onlyElement()), preferredProperties);
         }
 
         private PlanWithProperties rebaseAndDeriveProperties(PlanNode node, PlanWithProperties child)

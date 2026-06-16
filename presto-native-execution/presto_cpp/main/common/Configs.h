@@ -693,13 +693,27 @@ class SystemConfig : public ConfigBase {
       kExchangeMaterializationOutputBufferPerPartitionMaxBytes{
           "exchange.materialization.output-buffer.per-partition-max-bytes"};
 
-  /// When true, MaterializedOutputBuffer uses a system memory pool (outside
-  /// the arbitrator). When false, uses an operator pool under the query's
-  /// memory hierarchy (visible to the arbitrator).
-  /// Default: false.
+  /// Fraction of the per-partition drain threshold used during memory reclaim.
+  /// The reclaim drain threshold is generally lower than the regular drain
+  /// threshold, but high enough that draining actually reduces memory. Without
+  /// this lower bound, reclaim would flush small partition buffers that don't
+  /// produce compressible packages — low ROI flushes that move data to the
+  /// writer without freeing meaningful memory.
+  /// Default: 0.67.
   static constexpr std::string_view
-      kExchangeMaterializationOutputBufferUseSystemMemory{
-          "exchange.materialization.output-buffer.use-system-memory"};
+      kExchangeMaterializationReclaimDrainThresholdRatio{
+          "exchange.materialization.reclaim-drain-threshold-ratio"};
+
+  /// Wait for the writer to drain after flushing partition buffers during
+  /// reclaim. Default: false.
+  static constexpr std::string_view
+      kExchangeMaterializationReclaimWaitForWriterDrainEnabled{
+          "exchange.materialization.reclaim-wait-for-writer-drain-enabled"};
+
+  /// Use high reclaim priority (-1) for the output buffer pool.
+  /// Default: false (uses default priority 0).
+  static constexpr std::string_view kExchangeMaterializationReclaimHighPriority{
+      "exchange.materialization.reclaim-high-priority"};
 
   static constexpr std::string_view kHttpEnableAccessLog{
       "http-server.enable-access-log"};
@@ -1168,7 +1182,11 @@ class SystemConfig : public ConfigBase {
 
   int64_t exchangeMaterializationOutputBufferPerPartitionMaxBytes() const;
 
-  bool exchangeMaterializationOutputBufferUseSystemMemory() const;
+  double exchangeMaterializationReclaimDrainThresholdRatio() const;
+
+  bool exchangeMaterializationReclaimWaitForWriterDrainEnabled() const;
+
+  bool exchangeMaterializationReclaimHighPriority() const;
 
   bool enableSerializedPageChecksum() const;
 

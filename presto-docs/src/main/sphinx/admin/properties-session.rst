@@ -199,6 +199,16 @@ Example usage::
 
 The corresponding configuration property is :ref:`admin/properties:\`\`try-function-catchable-errors\`\``.
 
+``field_names_in_json_cast_enabled``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``true``
+
+When enabled, JSON objects are cast to ROW types by matching fields by name instead of position, preventing incorrect results when JSON field order differs.
+
+For more information and examples, see :ref:`functions/json:cast to json`.
+
 Spilling Properties
 -------------------
 
@@ -377,6 +387,37 @@ or ``MAX`` that support partial/intermediate/final splitting.
 
 The corresponding configuration property is :ref:`admin/properties:\`\`optimizer.pre-aggregate-before-grouping-sets\`\``.
 
+``parallelize_chained_aggregation``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+When enabled, optimizes chained aggregations where the outer grouping keys are a subset of
+the inner grouping keys by inserting a local round-robin exchange between the outer PARTIAL
+aggregation and the chain leading to the inner FINAL aggregation. This parallelizes the
+outer PARTIAL across the local node's drivers when the inner aggregation's parallelism is
+below what the node can support — common when the inner grouping keys have low cardinality
+and the outer aggregation is CPU-heavy (for example ``approx_percentile``).
+
+For example, in a query like::
+
+    SELECT approx_percentile(s, 0.5)
+    FROM (SELECT sum(x) AS s FROM t GROUP BY k1, k2)
+    GROUP BY k2
+
+The inner aggregation groups by ``(k1, k2)`` and the outer aggregation groups by ``(k2)``.
+Since ``{k2}`` is a subset of ``{k1, k2}``, a local round-robin exchange can be inserted
+above the inner aggregation so that the outer PARTIAL fans out across all local drivers
+instead of inheriting the inner aggregation's parallelism.
+
+Requirements:
+
+* Outer grouping keys must be a strict subset of inner grouping keys
+* Only ``ProjectNode`` and ``ExchangeNode`` may sit between the outer PARTIAL and the inner FINAL
+
+The corresponding configuration property is :ref:`admin/properties:\`\`optimizer.parallelize-chained-aggregation\`\``.
+
 ``push_aggregation_through_join``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -474,7 +515,7 @@ Only fires for single-grouping-set aggregations with deterministic arguments and
 union branches. ``GROUPING SETS``, ``ROLLUP``, ``CUBE``, and global (no-``GROUP BY``)
 aggregations are not pushed.
 
-The corresponding configuration property is :ref:`admin/properties:\`\`optimizer.push-aggregation-through-disjoint-union\`\``.
+The corresponding configuration property is ``optimizer.push-aggregation-through-disjoint-union``.
 
 ``join_reordering_strategy``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -745,6 +786,46 @@ enabled. Disabled by default because cloning additional probe-side work adds pla
 and runtime overhead, which only pays off when the build side is large enough to dominate
 the join cost.
 
+The corresponding configuration property is ``optimizer.join-prefilter-build-side-with-complex-probe-side``.
+
+``push_filter_through_selecting_aggregation``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+Pushes HAVING-style filters on the output of single-value-selecting aggregates (``MAX``,
+``MIN``) below the aggregation when the predicate direction matches the aggregate's
+selection semantics. For example, ``HAVING max(x) >= 1.0`` becomes ``WHERE x >= 1.0``.
+Only fires when the aggregation has a single aggregate (so filtering rows below the
+aggregation does not change the row set seen by other aggregates), the aggregate
+argument is a direct column reference (no expressions, ``DISTINCT``, ``FILTER``,
+``MASK``, or ``ORDER BY``), and the non-aggregate side of the comparison is evaluable
+below the aggregation (literals, grouping keys, raw source columns).
+
+Strict-direction predicates are pushed in REPLACE form: ``MAX`` with ``>`` / ``>=`` and
+``MIN`` with ``<`` / ``<=``.
+
+Equality on ``MAX`` / ``MIN`` is pushed in ADD-pre-filter + KEEP-HAVING form:
+``HAVING max(x) = c`` becomes ``WHERE x >= c`` below the aggregation while keeping
+``HAVING max(x) = c`` above; symmetric for ``MIN`` (``WHERE x <= c``). The relaxed
+pre-filter is implied by the original predicate, and the kept HAVING still rejects
+groups that would have failed it originally.
+
+``optimize_row_in_predicate``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+Rewrites ``ROW(c1, c2, ...) IN (ROW(v1_1, v1_2, ...), ROW(v2_1, v2_2, ...), ...)`` to add per-column
+``IN`` predicates (``c1 IN (v1_1, v2_1, ...) AND c2 IN (v1_2, v2_2, ...) AND ...``) alongside the original
+disjunctive OR of AND clauses expansion. ``ROW NOT IN`` is rewritten symmetrically with per-column ``NOT IN``
+disjuncts plus the original ``ROW NOT IN`` as a safety net. The added simple predicates help the domain
+translator extract per-column constraints for optimization. Only fires when the filter sits on a table scan
+(optionally through projections), and runs once before table layout selection. This optimization is
+flag-controlled and adds a small overhead from the extra predicates.
+
 
 JDBC Properties
 ---------------
@@ -961,6 +1042,20 @@ For example, when enabled, the following query::
 is internally optimized to use a single ``max_by(ROW(v1, v2, v3), k)`` call with field extraction,
 reducing both CPU and memory usage.
 
+``pull_constant_projection_above_exchange``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+Pull constant assignments in projections above remote exchanges so that constant values are not
+serialized and shuffled across the network. When enabled, constants produced by a ``ProjectNode``
+directly below a remote ``ExchangeNode`` are moved to a new ``ProjectNode`` above the exchange,
+narrowing the exchange output layout. Constants used in partitioning, hashing, or ordering are not
+pulled up, and for multi-source (``UNION``) exchanges only constants that are identical across all
+sources are pulled up. This is the session-level counterpart of the configuration property
+:ref:`admin/properties:\`\`optimizer.pull-constant-projection-above-exchange\`\``.
+
 ``grouped_execution``
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -998,3 +1093,17 @@ When partition-aware execution is not applicable (for example: non-partitioned t
 columns in join conditions), the query falls back to standard grouped execution automatically.
 
 The corresponding configuration property is :ref:`admin/properties:\`\`partition-aware-grouped-execution-enabled\`\``.
+
+Geometry Properties
+-------------------
+
+``legacy_st_equals``
+^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+Enable legacy behavior for the ``ST_Equals`` geospatial function.
+See ``ST_Equals`` in :ref:`functions/geospatial:Relationship Tests` for details on the behavior differences.
+
+The corresponding configuration property is :ref:`admin/properties:\`\`legacy-st-equals\`\``.

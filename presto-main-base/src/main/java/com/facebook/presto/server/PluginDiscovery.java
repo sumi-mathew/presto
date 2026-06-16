@@ -59,7 +59,7 @@ final class PluginDiscovery
             throw new RuntimeException("Main artifact file is not a directory: " + file);
         }
 
-        if (new File(file, servicesFile).exists()) {
+        if (Files.exists(file.toPath().resolve(servicesFile))) {
             return ImmutableSet.of();
         }
 

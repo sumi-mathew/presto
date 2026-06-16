@@ -167,7 +167,7 @@ The maximum size of the request header from the HTTP server.
 
 Note: The default value can cause errors when large session properties
 or other large session information is involved.
-See :ref:`troubleshoot/query:\`\`Request Header Fields Too Large\`\``.
+See :ref:`troubleshoot/query:Request Header Fields Too Large`.
 
 ``offset-clause-enabled``
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -237,10 +237,10 @@ Memory Management Properties
 * **Type:** ``data size``
 * **Default value:** ``JVM max memory * 0.1``
 
-This is the max amount of user memory a query can use on a worker.
+This is the maximum amount of user memory a query can use on a worker.
 User memory is allocated during execution for things that are directly
 attributable to or controllable by a user query. For example, memory used
-by the hash tables built during execution, memory used during sorting, etc.
+by the hash tables built during execution, or memory used during sorting.
 When the user memory allocation of a query on any worker hits this limit
 it will be killed.
 
@@ -253,7 +253,7 @@ it will be killed.
 This is the max amount of user and system memory a query can use on a worker.
 System memory is allocated during execution for things that are not directly
 attributable to or controllable by a user query. For example, memory allocated
-by the readers, writers, network buffers, etc. When the sum of the user and
+by the readers, writers, and network buffers. When the sum of the user and
 system memory allocated by a query on any worker hits this limit it will be killed.
 The value of ``query.max-total-memory-per-node`` must be greater than
 ``query.max-memory-per-node``.
@@ -267,7 +267,7 @@ The value of ``query.max-total-memory-per-node`` must be greater than
 This is the max amount of user memory a query can use across the entire cluster.
 User memory is allocated during execution for things that are directly
 attributable to or controllable by a user query. For example, memory used
-by the hash tables built during execution, memory used during sorting, etc.
+by the hash tables built during execution, or memory used during sorting.
 When the user memory allocation of a query across all workers hits this limit
 it will be killed.
 
@@ -280,7 +280,7 @@ it will be killed.
 This is the max amount of user and system memory a query can use across the entire cluster.
 System memory is allocated during execution for things that are not directly
 attributable to or controllable by a user query. For example, memory allocated
-by the readers, writers, network buffers, etc. When the sum of the user and
+by the readers, writers, and network buffers. When the sum of the user and
 system memory allocated by a query across all workers hits this limit it will be
 killed. The value of ``query.max-total-memory`` must be greater than
 ``query.max-memory``.
@@ -701,7 +701,7 @@ or thousands of workers.
 
 Number of threads used to handle timeouts when generating HTTP responses. This value
 should be increased if all the threads are frequently in use. This can be monitored
-via the ``com.facebook.presto.server:name=AsyncHttpExecutionMBean:TimeoutExecutor``
+with the ``com.facebook.presto.server:name=AsyncHttpExecutionMBean:TimeoutExecutor``
 JMX object. If ``ActiveCount`` is always the same as ``PoolSize``, increase the
 number of threads.
 
@@ -736,7 +736,7 @@ Sets the number of threads used by workers to process splits. Increasing this nu
 can improve throughput if worker CPU utilization is low and all the threads are in use,
 but will cause increased heap space usage. Setting the value too high may cause a drop
 in performance due to a context switching. The number of active threads is available
-via the ``RunningSplits`` property of the
+through the ``RunningSplits`` property of the
 ``com.facebook.presto.execution.executor:name=TaskExecutor.RunningSplits`` JMX object.
 
 The number of threads can be configured using either an absolute value (for example, ``10``)
@@ -796,7 +796,7 @@ The target value for the number of splits that can be running for
 each worker node, assuming all splits have the standard split weight.
 
 Using a higher value is recommended if queries are submitted in large batches
-(e.g., running a large group of reports periodically) or for connectors that
+(such as running a large group of reports periodically) or for connectors that
 produce many splits that complete quickly but do not support assigning split
 weight values to express that to the split scheduler. Increasing this value
 may improve query latency by ensuring that the workers have enough splits to
@@ -945,6 +945,34 @@ Only applies to decomposable aggregation functions.
 
 The corresponding session property is :ref:`admin/properties-session:\`\`pre_aggregate_before_grouping_sets\`\``.
 
+``optimizer.parallelize-chained-aggregation``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+When enabled, optimizes chained aggregations where the outer grouping keys are a subset of
+the inner grouping keys by inserting a local round-robin exchange above the inner
+aggregation. This parallelizes the outer ``PARTIAL`` across the local node's drivers when
+the inner aggregation's parallelism is below what the node can support.
+
+The corresponding session property is :ref:`admin/properties-session:\`\`parallelize_chained_aggregation\`\``.
+
+``optimizer.pull-constant-projection-above-exchange``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+Pull constant assignments in projections above remote exchanges so that constant values are
+not serialized and shuffled across the network. When enabled, constants produced by a
+``ProjectNode`` directly below a remote ``ExchangeNode`` are moved to a new ``ProjectNode``
+above the exchange, narrowing the exchange output layout. Constants used in partitioning,
+hashing, or ordering are not pulled up, and for multi-source (``UNION``) exchanges only
+constants that are identical across all sources are pulled up.
+
+The corresponding session property is :ref:`admin/properties-session:\`\`pull_constant_projection_above_exchange\`\``.
+
 ``optimizer.push-aggregation-through-join``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -1062,7 +1090,7 @@ null padded rows that may be produced by the outer join, the optimizer introduce
 join with corresponding aggregations over a single null value and then coalesces the aggregations
 from the join output with these null aggregated values.
 
-For certain aggregate functions (those that ignore nulls, ``COUNT``, etc) the cross join may be
+For certain aggregate functions (those that ignore nulls, ``COUNT``, and similar functions) the cross join may be
 avoided and the default/known aggregate value over ``NULL`` may be coalesced  directly with the aggregate
 outputs of the join. This optimization eliminates the cross join, may convert the outer join into an inner
 join and thereby produces more optimal plans.
@@ -1508,7 +1536,7 @@ comprehensive coordinator load management. When both are configured:
 Without query-pacing, the cluster can admit multiple queries at once, which
 can lead to significantly more concurrent tasks than expected over this limit.
 
-Set to a lower value (e.g., ``50000``) to limit coordinator task management
+Set to a lower value such as ``50000`` to limit coordinator task management
 overhead. The default value effectively disables this feature.
 
 .. note::
@@ -1558,7 +1586,7 @@ for cross-cluster retry operations.
 Comma-separated list of error codes that allow cross-cluster retry. When a query
 fails with one of these error codes, it can be automatically retried on a backup
 cluster if a retry URL is provided. Available error codes include standard Presto
-error codes such as ``REMOTE_TASK_ERROR``, ``CLUSTER_OUT_OF_MEMORY``, etc.
+error codes such as ``REMOTE_TASK_ERROR``, ``CLUSTER_OUT_OF_MEMORY``.
 
 View and Materialized View Properties
 -------------------------------------
@@ -1786,3 +1814,81 @@ or HTTP/S. HTTPS are supported using the same internal communication HTTPS
 configs.
 
 To enable SSL/TLS, see :doc:`/security/internal-communication`.
+
+Driver-side Metadata Sidecar Properties
+---------------------------------------
+
+When :doc:`Presto on Spark </admin/spark>` runs on a native (Velox) execution engine,
+the driver can optionally launch a short-lived ``presto_server`` sidecar at bootstrap
+to register native-only functions into ``FunctionAndTypeManager`` before planning
+(analogous to :doc:`/plugin/native-sidecar-plugin` on the coordinator). The
+sidecar is shut down before query execution and is **disabled by default**.
+
+``built-in-sidecar-functions-enabled``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+Enables the bootstrap step that fetches native function metadata and registers it
+into ``FunctionAndTypeManager``. Must be paired with ``metadata-sidecar.enabled``.
+
+``metadata-sidecar.enabled``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+Enables the driver-side sidecar lifecycle.
+
+``metadata-sidecar.executable-path``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``string``
+* **Default value:** (unset)
+
+Absolute path to the ``presto_server`` binary on the driver host. Required when
+``metadata-sidecar.enabled=true`` unless a custom ``SidecarBinaryLocator`` binding
+is provided.
+
+``metadata-sidecar.program-arguments``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``string``
+* **Default value:** (empty)
+
+Extra whitespace-separated arguments for the sidecar binary. ``--etc_dir`` is always
+added automatically.
+
+``metadata-sidecar.startup-timeout``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``duration``
+* **Default value:** ``2m``
+
+Maximum wait for the sidecar to become reachable on its HTTP port before bootstrap
+fails.
+
+``metadata-sidecar.storage-oncall-name``, ``metadata-sidecar.storage-user-name``, ``metadata-sidecar.storage-service-name``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``string``
+* **Default value:** (empty)
+
+Optional values written into the sidecar's ``config.properties`` to satisfy
+required-property checks in deployment-specific native worker initialization paths.
+Leave unset if not required by your deployment.
+
+Geometry Properties
+-------------------
+
+``legacy-st-equals``
+^^^^^^^^^^^^^^^^^^^^
+
+* **Type:** ``boolean``
+* **Default value:** ``false``
+
+Enable legacy behavior for the ``ST_Equals`` geospatial function.
+See ``ST_Equals`` in :ref:`functions/geospatial:Relationship Tests` for details on the behavior differences.
+
+The corresponding session property is :ref:`admin/properties-session:\`\`legacy_st_equals\`\``.

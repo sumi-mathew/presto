@@ -119,8 +119,6 @@ endif()
 # likely due to a conflict between Arrow Thrift from velox_hive_connector and
 # FBThrift libraries. The build issue is fixed by linking velox_hive_connector
 # dependencies first followed by FBThrift.
-target_link_libraries(presto_server_lib presto_thrift-cpp2 presto_thrift_extra ${THRIFT_LIBRARY})
-
 if(PRESTO_ENABLE_REMOTE_FUNCTIONS)
   add_library(presto_server_remote_function JsonSignatureParser.cpp RemoteFunctionRegisterer.cpp)
 
@@ -132,6 +130,8 @@ if(PRESTO_ENABLE_REMOTE_FUNCTIONS)
   )
   target_link_libraries(presto_server_lib presto_server_remote_function)
 endif()
+
+target_link_libraries(presto_server_lib presto_thrift-cpp2 presto_thrift_extra ${THRIFT_LIBRARY})
 
 set_property(TARGET presto_server_lib PROPERTY JOB_POOL_LINK presto_link_job_pool)
 

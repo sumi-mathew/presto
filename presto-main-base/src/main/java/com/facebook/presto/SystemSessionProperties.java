@@ -54,6 +54,7 @@ import com.facebook.presto.sql.analyzer.FeaturesConfig.ShuffleForTableScanStrate
 import com.facebook.presto.sql.analyzer.FeaturesConfig.SingleStreamSpillerChoice;
 import com.facebook.presto.sql.analyzer.FunctionsConfig;
 import com.facebook.presto.sql.planner.CompilerConfig;
+import com.facebook.presto.sql.planner.iterative.rule.materializedview.MaterializedViewRewriteStrategy;
 import com.facebook.presto.sql.planner.plan.RPCNode;
 import com.facebook.presto.tracing.TracingConfig;
 import com.google.common.base.Splitter;
@@ -175,6 +176,7 @@ public final class SystemSessionProperties
     public static final String EXCHANGE_CHECKSUM = "exchange_checksum";
     public static final String LEGACY_TIMESTAMP = "legacy_timestamp";
     public static final String ENABLE_INTERMEDIATE_AGGREGATIONS = "enable_intermediate_aggregations";
+    public static final String PARALLELIZE_CHAINED_AGGREGATION = "parallelize_chained_aggregation";
     public static final String PUSH_AGGREGATION_THROUGH_JOIN = "push_aggregation_through_join";
     public static final String PUSH_SEMI_JOIN_THROUGH_UNION = "push_semi_join_through_union";
     public static final String PUSH_AGGREGATION_THROUGH_DISJOINT_UNION = "push_aggregation_through_disjoint_union";
@@ -272,6 +274,8 @@ public final class SystemSessionProperties
     public static final String MATERIALIZED_VIEW_STALENESS_WINDOW = "materialized_view_staleness_window";
     public static final String MATERIALIZED_VIEW_FORCE_STALE = "materialized_view_force_stale";
     public static final String MATERIALIZED_VIEW_DEFAULT_REFRESH_TYPE = "materialized_view_default_refresh_type";
+    public static final String MATERIALIZED_VIEW_STITCHING_STRATEGY = "materialized_view_stitching_strategy";
+    public static final String MATERIALIZED_VIEW_INCREMENTAL_REFRESH_STRATEGY = "materialized_view_incremental_refresh_strategy";
     public static final String AGGREGATION_IF_TO_FILTER_REWRITE_STRATEGY = "aggregation_if_to_filter_rewrite_strategy";
     public static final String JOINS_NOT_NULL_INFERENCE_STRATEGY = "joins_not_null_inference_strategy";
     public static final String RESOURCE_AWARE_SCHEDULING_STRATEGY = "resource_aware_scheduling_strategy";
@@ -386,6 +390,7 @@ public final class SystemSessionProperties
     public static final String TABLE_SCAN_SHUFFLE_PARALLELISM_THRESHOLD = "table_scan_shuffle_parallelism_threshold";
     public static final String TABLE_SCAN_SHUFFLE_STRATEGY = "table_scan_shuffle_strategy";
     public static final String SKIP_PUSHDOWN_THROUGH_EXCHANGE_FOR_REMOTE_PROJECTION = "skip_pushdown_through_exchange_for_remote_projection";
+    public static final String PULL_CONSTANT_PROJECTION_ABOVE_EXCHANGE = "pull_constant_projection_above_exchange";
     public static final String REMOTE_FUNCTION_NAMES_FOR_FIXED_PARALLELISM = "remote_function_names_for_fixed_parallelism";
     public static final String REMOTE_FUNCTION_FIXED_PARALLELISM_TASK_COUNT = "remote_function_fixed_parallelism_task_count";
     public static final String RPC_FUNCTION_PARALLELISM = "rpc_function_parallelism";
@@ -404,9 +409,12 @@ public final class SystemSessionProperties
     public static final String NATIVE_MIN_COLUMNAR_ENCODING_CHANNELS_TO_PREFER_ROW_WISE_ENCODING = "native_min_columnar_encoding_channels_to_prefer_row_wise_encoding";
     public static final String NATIVE_ENFORCE_JOIN_BUILD_INPUT_PARTITION = "native_enforce_join_build_input_partition";
     public static final String NATIVE_EXECUTION_SCALE_WRITER_THREADS_ENABLED = "native_execution_scale_writer_threads_enabled";
+    public static final String NATIVE_EXCHANGE_MATERIALIZATION_ENABLED = "native_exchange_materialization_enabled";
     public static final String TRY_FUNCTION_CATCHABLE_ERRORS = "try_function_catchable_errors";
-    public static final String REWRITE_ROW_CONSTRUCTOR_IN_TO_DISJUNCTION = "rewrite_row_constructor_in_to_disjunction";
+    public static final String PUSH_FILTER_THROUGH_SELECTING_AGGREGATION = "push_filter_through_selecting_aggregation";
+    public static final String OPTIMIZE_ROW_IN_PREDICATE = "optimize_row_in_predicate";
     public static final String ALWAYS_ANALYZE_CREATE_TABLE_QUERY_ENABLED = "always_analyze_create_table_query_enabled";
+    public static final String LEGACY_ST_EQUALS = "legacy_st_equals";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -949,6 +957,11 @@ public final class SystemSessionProperties
                         ENABLE_INTERMEDIATE_AGGREGATIONS,
                         "Enable the use of intermediate aggregations",
                         featuresConfig.isEnableIntermediateAggregations(),
+                        false),
+                booleanProperty(
+                        PARALLELIZE_CHAINED_AGGREGATION,
+                        "Insert a local round-robin exchange above the inner aggregation in chained aggregations to parallelize the outer PARTIAL across local drivers",
+                        featuresConfig.isEnableParallelizeChainedAggregations(),
                         false),
                 booleanProperty(
                         PUSH_AGGREGATION_THROUGH_JOIN,
@@ -1558,6 +1571,30 @@ public final class SystemSessionProperties
                         false,
                         value -> MaterializedViewRefreshType.valueOf(((String) value).toUpperCase()),
                         MaterializedViewRefreshType::name),
+                new PropertyMetadata<>(
+                        MATERIALIZED_VIEW_STITCHING_STRATEGY,
+                        format("Strategy controlling when query-time stitching of partially stale materialized views fires. Valid values: %s",
+                                Stream.of(MaterializedViewRewriteStrategy.values())
+                                        .map(MaterializedViewRewriteStrategy::name)
+                                        .collect(joining(", "))),
+                        VARCHAR,
+                        MaterializedViewRewriteStrategy.class,
+                        featuresConfig.getMaterializedViewStitchingStrategy(),
+                        false,
+                        value -> MaterializedViewRewriteStrategy.valueOf(((String) value).toUpperCase()),
+                        MaterializedViewRewriteStrategy::name),
+                new PropertyMetadata<>(
+                        MATERIALIZED_VIEW_INCREMENTAL_REFRESH_STRATEGY,
+                        format("Strategy controlling when incremental refresh of materialized views fires. Valid values: %s",
+                                Stream.of(MaterializedViewRewriteStrategy.values())
+                                        .map(MaterializedViewRewriteStrategy::name)
+                                        .collect(joining(", "))),
+                        VARCHAR,
+                        MaterializedViewRewriteStrategy.class,
+                        featuresConfig.getMaterializedViewIncrementalRefreshStrategy(),
+                        false,
+                        value -> MaterializedViewRewriteStrategy.valueOf(((String) value).toUpperCase()),
+                        MaterializedViewRewriteStrategy::name),
                 stringProperty(
                         DISTRIBUTED_TRACING_MODE,
                         "Mode for distributed tracing. NO_TRACE, ALWAYS_TRACE, or SAMPLE_BASED",
@@ -2182,6 +2219,10 @@ public final class SystemSessionProperties
                         "Enable automatic scaling of writer threads",
                         featuresConfig.isNativeExecutionScaleWritersThreadsEnabled(),
                         !featuresConfig.isNativeExecutionEnabled()),
+                booleanProperty(NATIVE_EXCHANGE_MATERIALIZATION_ENABLED,
+                        "Native Execution only. Enable materialized exchange operators in Velox (MaterializedOutput/MaterializedExchange). When false, uses PartitionAndSerialize + ShuffleWrite.",
+                        true,
+                        false),
                 stringProperty(
                         EXPRESSION_OPTIMIZER_NAME,
                         "Configure which expression optimizer to use",
@@ -2239,6 +2280,11 @@ public final class SystemSessionProperties
                         "Skip pushing down remote projection through exchange",
                         featuresConfig.isSkipPushdownThroughExchangeForRemoteProjection(),
                         false),
+                booleanProperty(
+                        PULL_CONSTANT_PROJECTION_ABOVE_EXCHANGE,
+                        "Pull constant assignments in projections above remote exchanges to reduce network I/O",
+                        featuresConfig.isPullConstantProjectionAboveExchange(),
+                        false),
                 stringProperty(
                         REMOTE_FUNCTION_NAMES_FOR_FIXED_PARALLELISM,
                         "Regex pattern to match remote function names that should use fixed parallelism",
@@ -2288,9 +2334,13 @@ public final class SystemSessionProperties
                         "Comma-separated list of error code names that TRY function should catch (such as 'GENERIC_INTERNAL_ERROR,INVALID_ARGUMENTS')",
                         featuresConfig.getTryFunctionCatchableErrors(),
                         false),
-                booleanProperty(REWRITE_ROW_CONSTRUCTOR_IN_TO_DISJUNCTION,
-                        "Rewrite ROW(...) IN (ROW(...), ...) into OR of ANDs for partition pruning",
-                        featuresConfig.isRewriteRowConstructorInToDisjunction(),
+                booleanProperty(PUSH_FILTER_THROUGH_SELECTING_AGGREGATION,
+                        "Push HAVING-style filter on MAX/MIN/ARBITRARY aggregate output below the aggregation when the predicate direction matches the aggregate",
+                        featuresConfig.isPushFilterThroughSelectingAggregation(),
+                        false),
+                booleanProperty(OPTIMIZE_ROW_IN_PREDICATE,
+                        "Optimize ROW(...) IN/NOT IN (ROW(...), ...) by adding per-column IN/NOT IN predicates to help the domain translator extract constraints",
+                        featuresConfig.isOptimizeRowInPredicate(),
                         false),
                 booleanProperty(
                         ALWAYS_ANALYZE_CREATE_TABLE_QUERY_ENABLED,
@@ -2306,7 +2356,12 @@ public final class SystemSessionProperties
                         OPTIMIZE_TOP_N_USING_ROW_ID_MIN_COLUMN_SAVINGS,
                         "Minimum number of non-sort-key columns required before TopN row_id optimization triggers",
                         10,
-                        false));
+                        false),
+                booleanProperty(
+                        LEGACY_ST_EQUALS,
+                        "Use legacy ST_Equals function (warning: this will be removed)",
+                        functionsConfig.isLegacyStEquals(),
+                        true));
     }
 
     public static int getMaxPrefixesCount(Session session)
@@ -2766,6 +2821,11 @@ public final class SystemSessionProperties
         return session.getSystemProperty(ENABLE_INTERMEDIATE_AGGREGATIONS, Boolean.class);
     }
 
+    public static boolean isEnableParallelizeChainedAggregations(Session session)
+    {
+        return session.getSystemProperty(PARALLELIZE_CHAINED_AGGREGATION, Boolean.class);
+    }
+
     public static boolean shouldPushAggregationThroughJoin(Session session)
     {
         return session.getSystemProperty(PUSH_AGGREGATION_THROUGH_JOIN, Boolean.class);
@@ -2931,6 +2991,11 @@ public final class SystemSessionProperties
     public static boolean isLegacyUnnest(Session session)
     {
         return session.getSystemProperty(LEGACY_UNNEST, Boolean.class);
+    }
+
+    public static boolean isLegacySTEquals(Session session)
+    {
+        return session.getSystemProperty(LEGACY_ST_EQUALS, Boolean.class);
     }
 
     public static OptionalInt getMaxDriversPerTask(Session session)
@@ -3311,6 +3376,16 @@ public final class SystemSessionProperties
     public static MaterializedViewRefreshType getMaterializedViewDefaultRefreshType(Session session)
     {
         return session.getSystemProperty(MATERIALIZED_VIEW_DEFAULT_REFRESH_TYPE, MaterializedViewRefreshType.class);
+    }
+
+    public static MaterializedViewRewriteStrategy getMaterializedViewStitchingStrategy(Session session)
+    {
+        return session.getSystemProperty(MATERIALIZED_VIEW_STITCHING_STRATEGY, MaterializedViewRewriteStrategy.class);
+    }
+
+    public static MaterializedViewRewriteStrategy getMaterializedViewIncrementalRefreshStrategy(Session session)
+    {
+        return session.getSystemProperty(MATERIALIZED_VIEW_INCREMENTAL_REFRESH_STRATEGY, MaterializedViewRewriteStrategy.class);
     }
 
     public static boolean isVerboseRuntimeStatsEnabled(Session session)
@@ -3806,6 +3881,11 @@ public final class SystemSessionProperties
         return session.getSystemProperty(NATIVE_EXECUTION_SCALE_WRITER_THREADS_ENABLED, Boolean.class);
     }
 
+    public static boolean isNativeExchangeMaterializationEnabled(Session session)
+    {
+        return session.getSystemProperty(NATIVE_EXCHANGE_MATERIALIZATION_ENABLED, Boolean.class);
+    }
+
     public static int getMaxSplitPreloadPerDriver(Session session)
     {
         return session.getSystemProperty(NATIVE_MAX_SPLIT_PRELOAD_PER_DRIVER, Integer.class);
@@ -3896,6 +3976,11 @@ public final class SystemSessionProperties
         return session.getSystemProperty(SKIP_PUSHDOWN_THROUGH_EXCHANGE_FOR_REMOTE_PROJECTION, Boolean.class);
     }
 
+    public static boolean isPullConstantProjectionAboveExchange(Session session)
+    {
+        return session.getSystemProperty(PULL_CONSTANT_PROJECTION_ABOVE_EXCHANGE, Boolean.class);
+    }
+
     public static String getRemoteFunctionNamesForFixedParallelism(Session session)
     {
         return session.getSystemProperty(REMOTE_FUNCTION_NAMES_FOR_FIXED_PARALLELISM, String.class);
@@ -3916,9 +4001,14 @@ public final class SystemSessionProperties
         return session.getSystemProperty(TRY_FUNCTION_CATCHABLE_ERRORS, String.class);
     }
 
-    public static boolean isRewriteRowConstructorInToDisjunction(Session session)
+    public static boolean isPushFilterThroughSelectingAggregation(Session session)
     {
-        return session.getSystemProperty(REWRITE_ROW_CONSTRUCTOR_IN_TO_DISJUNCTION, Boolean.class);
+        return session.getSystemProperty(PUSH_FILTER_THROUGH_SELECTING_AGGREGATION, Boolean.class);
+    }
+
+    public static boolean isOptimizeRowInPredicate(Session session)
+    {
+        return session.getSystemProperty(OPTIMIZE_ROW_IN_PREDICATE, Boolean.class);
     }
 
     public static boolean isAlwaysAnalyzeCreateTableQueryEnabled(Session session)

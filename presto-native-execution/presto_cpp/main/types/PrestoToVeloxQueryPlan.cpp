@@ -39,7 +39,6 @@
 #include "presto_cpp/main/operators/ShuffleWrite.h"
 #include "presto_cpp/main/properties/session/SessionProperties.h"
 #include "presto_cpp/main/types/TypeParser.h"
-#include "velox/exec/MemoryReclaimer.h"
 #include "velox/exec/TraceUtil.h"
 // RPC plan nodes for single-operator async RPC execution
 #include <folly/json.h>
@@ -1085,9 +1084,21 @@ VeloxQueryPlanConverterBase::toVeloxQueryPlan(
   std::vector<std::string> aggregateNames;
   std::vector<core::AggregationNode::Aggregate> aggregates;
 
+  // Use aggregationOutputs (Java's LinkedHashMap insertion order) when sent by
+  // the coordinator. Iterating node->aggregations directly is unsafe because
+  // protocol::Map = std::map<VRE, ...> sorts by variable name, which can
+  // diverge from Java's order and shift channel positions at exchange
+  // operators (see prestodb/presto#27902). Fall back to map iteration only
+  // for backward compatibility with older coordinators that don't send the
+  // field (aggregationOutputs is Optional<> in the protocol).
   std::vector<protocol::VariableReferenceExpression> outputVariables;
-  for (const auto& [variable, _] : node->aggregations) {
-    outputVariables.push_back(variable);
+  if (node->aggregationOutputs != nullptr &&
+      !node->aggregationOutputs->empty()) {
+    outputVariables = *node->aggregationOutputs;
+  } else {
+    for (const auto& [variable, _] : node->aggregations) {
+      outputVariables.push_back(variable);
+    }
   }
   toAggregations(
       outputVariables, node->aggregations, aggregates, aggregateNames);
@@ -2639,39 +2650,10 @@ core::PlanFragment VeloxBatchQueryPlanConverter::toVeloxQueryPlan(
   const bool exchangeMaterializationEnabled =
       SystemConfig::instance()->exchangeMaterializationEnabled();
   if (exchangeMaterializationEnabled && !fragment.outputOrderingScheme) {
-    auto* shuffleFactory =
-        operators::ShuffleInterfaceFactory::factory(shuffleName_);
-    VELOX_CHECK_NOT_NULL(
-        shuffleFactory,
-        "ShuffleInterface factory '{}' not registered",
-        shuffleName_);
-    const auto useSystemMemory =
-        SystemConfig::instance()
-            ->exchangeMaterializationOutputBufferUseSystemMemory();
-    auto shuffleWriterPool = useSystemMemory
-        ? velox::memory::memoryManager()->addLeafPool(
-              fmt::format("_sys.exchange_writer.{}", taskId))
-        // Add noop memory reclaimer to participate in arbitration protocol.
-        : queryCtx_->pool()->addLeafChild(
-              fmt::format("exchange_writer.{}", taskId),
-              true,
-              velox::exec::MemoryReclaimer::create());
-    auto shuffleWriter = shuffleFactory->createWriter(
-        *serializedShuffleWriteInfo_, shuffleWriterPool.get());
-
-    auto sharedWriter =
-        std::shared_ptr<operators::ShuffleWriter>(std::move(shuffleWriter));
-    const auto maxBufferedBytes =
-        SystemConfig::instance()->exchangeMaterializationOutputBufferMaxBytes();
-    const auto drainThreshold =
-        SystemConfig::instance()
-            ->exchangeMaterializationOutputBufferPerPartitionMaxBytes();
-    auto buffer = std::make_shared<operators::MaterializedOutputBuffer>(
-        partitionedOutputNode->numPartitions(),
-        std::move(sharedWriter),
-        std::move(shuffleWriterPool),
-        maxBufferedBytes,
-        drainThreshold);
+    VELOX_CHECK(
+        !shuffleName_.empty(),
+        "Shuffle name not provided from 'shuffle.name' property in "
+        "config.properties");
 
     auto materializedOutputNode =
         std::make_shared<operators::MaterializedOutputNode>(
@@ -2681,8 +2663,9 @@ core::PlanFragment VeloxBatchQueryPlanConverter::toVeloxQueryPlan(
             partitionedOutputNode->outputType(),
             partitionedOutputNode->partitionFunctionSpecPtr(),
             partitionedOutputNode->isReplicateNullsAndAny(),
-            partitionedOutputNode->sources()[0],
-            std::move(buffer));
+            operators::ShuffleWriterMetadata{
+                *serializedShuffleWriteInfo_, shuffleName_},
+            partitionedOutputNode->sources()[0]);
 
     planFragment.planNode = std::move(materializedOutputNode);
     return planFragment;

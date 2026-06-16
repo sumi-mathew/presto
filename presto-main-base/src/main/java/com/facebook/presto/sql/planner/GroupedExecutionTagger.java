@@ -65,7 +65,7 @@ import static com.facebook.presto.spi.connector.ConnectorCapabilities.SUPPORTS_R
 import static com.facebook.presto.spi.connector.NotPartitionedPartitionHandle.NOT_PARTITIONED;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.Iterables.getOnlyElement;
+import static com.google.common.collect.MoreCollectors.onlyElement;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
@@ -285,7 +285,7 @@ class GroupedExecutionTagger
     @Override
     public GroupedExecutionTagger.GroupedExecutionProperties visitWindow(WindowNode node, Void context)
     {
-        GroupedExecutionTagger.GroupedExecutionProperties properties = getOnlyElement(node.getSources()).accept(this, null);
+        GroupedExecutionTagger.GroupedExecutionProperties properties = node.getSources().stream().collect(onlyElement()).accept(this, null);
         if (groupedExecutionEnabled && properties.isCurrentNodeCapable()) {
             // Keep only vars that appear in the window's PARTITION BY columns
             return filterPartitionColumnsByVars(properties, new HashSet<>(node.getPartitionBy()));
@@ -296,7 +296,7 @@ class GroupedExecutionTagger
     @Override
     public GroupedExecutionTagger.GroupedExecutionProperties visitRowNumber(RowNumberNode node, Void context)
     {
-        GroupedExecutionTagger.GroupedExecutionProperties properties = getOnlyElement(node.getSources()).accept(this, null);
+        GroupedExecutionTagger.GroupedExecutionProperties properties = node.getSources().stream().collect(onlyElement()).accept(this, null);
         if (groupedExecutionEnabled && properties.isCurrentNodeCapable()) {
             // Keep only vars that appear in the row number's PARTITION BY columns
             return filterPartitionColumnsByVars(properties, new HashSet<>(node.getPartitionBy()));
@@ -307,7 +307,7 @@ class GroupedExecutionTagger
     @Override
     public GroupedExecutionTagger.GroupedExecutionProperties visitTopNRowNumber(TopNRowNumberNode node, Void context)
     {
-        GroupedExecutionTagger.GroupedExecutionProperties properties = getOnlyElement(node.getSources()).accept(this, null);
+        GroupedExecutionTagger.GroupedExecutionProperties properties = node.getSources().stream().collect(onlyElement()).accept(this, null);
         if (groupedExecutionEnabled && properties.isCurrentNodeCapable()) {
             // Keep only vars that appear in the top-N row number's PARTITION BY columns
             return filterPartitionColumnsByVars(properties, new HashSet<>(node.getPartitionBy()));
@@ -337,7 +337,7 @@ class GroupedExecutionTagger
     @Override
     public GroupedExecutionTagger.GroupedExecutionProperties visitMarkDistinct(MarkDistinctNode node, Void context)
     {
-        GroupedExecutionTagger.GroupedExecutionProperties properties = getOnlyElement(node.getSources()).accept(this, null);
+        GroupedExecutionTagger.GroupedExecutionProperties properties = node.getSources().stream().collect(onlyElement()).accept(this, null);
         if (groupedExecutionEnabled && properties.isCurrentNodeCapable()) {
             return new GroupedExecutionTagger.GroupedExecutionProperties(
                     true, true, properties.capableTableScanNodes, properties.totalLifespans, properties.recoveryEligible,

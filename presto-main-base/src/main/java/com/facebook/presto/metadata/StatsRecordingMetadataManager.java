@@ -305,11 +305,11 @@ public class StatsRecordingMetadataManager
     }
 
     @Override
-    public InsertTableHandle beginInsert(Session session, TableHandle tableHandle)
+    public InsertTableHandle beginInsert(Session session, TableHandle tableHandle, List<String> insertColumnNames)
     {
         long startTime = System.nanoTime();
         try {
-            return delegate.beginInsert(session, tableHandle);
+            return delegate.beginInsert(session, tableHandle, insertColumnNames);
         }
         finally {
             stats.recordBeginInsertCall(System.nanoTime() - startTime);

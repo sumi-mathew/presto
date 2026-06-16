@@ -262,8 +262,8 @@ Avro Configuration Properties
 
 When querying or creating Avro-formatted tables with the Hive connector, you may need to supply or override the Avro schema. In addition, Hive Metastore, especially Hive 3.x, must be configured to read storage schemas for Avro tables.
 
-Table Properties
-^^^^^^^^^^^^^^^^
+Avro Table Properties
+^^^^^^^^^^^^^^^^^^^^^
 
 These properties can be used when creating or querying Avro tables in Presto:
 
@@ -303,8 +303,8 @@ You must restart the metastore service for this configuration to take effect. Th
 Textfile Configuration Properties
 ---------------------------------
 
-Table Properties
-^^^^^^^^^^^^^^^^
+Textfile Table Properties
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 These properties can be used when creating TEXTFILE tables in Presto:
 
@@ -395,6 +395,81 @@ Property Name                                                         Descriptio
   * ``TABLE_PRIVILEGES``: Caches table-level privilege information for users and roles.
   * ``ROLES``: Caches the list of available Hive roles.
   * ``ROLE_GRANTS``: Caches role grant mappings for principals.
+
+Metastore Cache Metrics
+-----------------------
+
+Overview
+^^^^^^^^
+
+The Hive connector uses in-memory caching to reduce load on the Hive metastore and improve query performance. 
+The connector maintains 14 distinct caches, each optimized for specific types of metadata. All caches expose 
+JMX metrics that provide visibility into cache performance, helping you monitor efficiency, tune cache 
+configurations, and troubleshoot performance issues.
+
+Metric Types
+^^^^^^^^^^^^
+
+Each cache exposes four types of metrics:
+
+* **hit** - Number of successful cache lookups (metadata found in cache)
+* **miss** - Number of cache misses requiring metastore access
+* **eviction** - Number of entries evicted from cache due to size limits or TTL expiration
+* **size** - Current number of entries stored in the cache
+
+JMX Metric Naming Convention
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+All cache metrics can be queried from the following JMX table:
+
+.. code-block:: sql
+
+    SELECT <metricname> FROM jmx.current."com.facebook.presto.hive.metastore:name=<catalogname>,type=metastorecachestatscache"
+
+Where:
+
+* ``<catalogname>`` is the catalog name
+* ``<metricname>`` is the cache metric name
+
+
+Each of the 14 caches exposes 4 metrics (``hit``, ``miss``, ``eviction``, ``size``) following the pattern ``<cachename><metrictype>``:
+
+Available Metrics
+^^^^^^^^^^^^^^^^^
+
+The following table lists the available cache metrics.
+
+================================ ========================================
+Cache Name                       Example Metric
+================================ ========================================
+``databasecache``                ``databasecachehit``
+``databasenamescache``           ``databasenamescachehit``
+``tablecache``                   ``tablecachehit``
+``tablenamescache``              ``tablenamescachehit``
+``tablestatisticscache``         ``tablestatisticscachehit``
+``tableconstraintscache``        ``tableconstraintscachehit``
+``partitioncache``               ``partitioncachehit``
+``partitionfiltercache``         ``partitionfiltercachehit``
+``partitionnamescache``          ``partitionnamescachehit``
+``partitionstatisticscache``     ``partitionstatisticscachehit``
+``viewnamescache``               ``viewnamescachehit``
+``tableprivilegescache``         ``tableprivilegescachehit``
+``rolescache``                   ``rolescachehit``
+``rolegrantscache``              ``rolegrantscachehit``
+================================ ========================================
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT databasecachehit, tablecachehit, partitionfiltercachehit FROM jmx.current."com.facebook.presto.hive.metastore:name=<catalogname>,type=metastorecachestatscache"
+
+For cache invalidation procedures, see `Invalidate Metastore Cache`_.
+
+.. note::
+
+    All 14 caches are enabled by default when metastore caching is configured. Metrics are automatically 
+    exposed via JMX without additional configuration.
 
 AWS Glue Catalog Configuration Properties
 -----------------------------------------

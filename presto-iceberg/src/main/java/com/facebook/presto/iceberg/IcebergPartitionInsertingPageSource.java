@@ -34,7 +34,7 @@ import static com.facebook.presto.common.Utils.nativeValueToBlock;
 import static com.facebook.presto.hive.BaseHiveColumnHandle.ColumnType.PARTITION_KEY;
 import static com.facebook.presto.iceberg.IcebergErrorCode.ICEBERG_BAD_DATA;
 import static com.facebook.presto.iceberg.IcebergMetadataColumn.isMetadataColumnId;
-import static com.facebook.presto.iceberg.IcebergUtil.deserializePartitionValue;
+import static com.facebook.presto.iceberg.IcebergUtil.deserializeIcebergValue;
 import static com.google.common.base.Throwables.throwIfInstanceOf;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.util.Objects.requireNonNull;
@@ -111,12 +111,16 @@ public class IcebergPartitionInsertingPageSource
                     Type type = column.getType();
                     if (partitionKeys.containsKey(column.getId())) {
                         HivePartitionKey icebergPartition = partitionKeys.get(column.getId());
-                        Object prefilledValue = deserializePartitionValue(type, icebergPartition.getValue().orElse(null), column.getName());
+                        Object prefilledValue = deserializeIcebergValue(type, icebergPartition.getValue().orElse(null), column.getName());
                         return nativeValueToBlock(type, prefilledValue);
                     }
                     else if (column.getColumnType() == PARTITION_KEY) {
                         // Partition key with no value. This can happen after partition evolution
-                        return nativeValueToBlock(type, null);
+                        Object prefilledValue = null;
+                        if (column.getDefaultValue().isPresent()) {
+                            prefilledValue = deserializeIcebergValue(type, column.getDefaultValue().get(), column.getName());
+                        }
+                        return nativeValueToBlock(type, prefilledValue);
                     }
                     else if (isMetadataColumnId(column.getId())) {
                         return nativeValueToBlock(type, metadataValues.get(column.getColumnIdentity().getId()));

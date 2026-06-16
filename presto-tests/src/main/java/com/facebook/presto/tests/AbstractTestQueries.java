@@ -72,6 +72,8 @@ import static com.facebook.presto.SystemSessionProperties.OPTIMIZER_USE_HISTOGRA
 import static com.facebook.presto.SystemSessionProperties.OPTIMIZE_CASE_EXPRESSION_PREDICATE;
 import static com.facebook.presto.SystemSessionProperties.OPTIMIZE_CONDITIONAL_CONSTANT_APPROXIMATE_DISTINCT;
 import static com.facebook.presto.SystemSessionProperties.OPTIMIZE_HASH_GENERATION;
+import static com.facebook.presto.SystemSessionProperties.OPTIMIZE_ROW_IN_PREDICATE;
+import static com.facebook.presto.SystemSessionProperties.PARALLELIZE_CHAINED_AGGREGATION;
 import static com.facebook.presto.SystemSessionProperties.PREFILTER_FOR_GROUPBY_LIMIT;
 import static com.facebook.presto.SystemSessionProperties.PREFILTER_FOR_GROUPBY_LIMIT_TIMEOUT_MS;
 import static com.facebook.presto.SystemSessionProperties.PRE_AGGREGATE_BEFORE_GROUPING_SETS;
@@ -79,6 +81,7 @@ import static com.facebook.presto.SystemSessionProperties.PRE_PROCESS_METADATA_C
 import static com.facebook.presto.SystemSessionProperties.PULL_EXPRESSION_FROM_LAMBDA_ENABLED;
 import static com.facebook.presto.SystemSessionProperties.PUSH_AGGREGATION_THROUGH_DISJOINT_UNION;
 import static com.facebook.presto.SystemSessionProperties.PUSH_DOWN_FILTER_EXPRESSION_EVALUATION_THROUGH_CROSS_JOIN;
+import static com.facebook.presto.SystemSessionProperties.PUSH_FILTER_THROUGH_SELECTING_AGGREGATION;
 import static com.facebook.presto.SystemSessionProperties.PUSH_PROJECTION_THROUGH_CROSS_JOIN;
 import static com.facebook.presto.SystemSessionProperties.PUSH_REMOTE_EXCHANGE_THROUGH_GROUP_ID;
 import static com.facebook.presto.SystemSessionProperties.QUICK_DISTINCT_LIMIT_ENABLED;
@@ -1523,6 +1526,49 @@ public abstract class AbstractTestQueries
                 }
                 throw e;
             }
+        }
+    }
+
+    @Test
+    public void testParallelizeChainedAggregation()
+    {
+        Session enabled = Session.builder(getSession())
+                .setSystemProperty(PARALLELIZE_CHAINED_AGGREGATION, "true")
+                .build();
+        Session disabled = Session.builder(getSession())
+                .setSystemProperty(PARALLELIZE_CHAINED_AGGREGATION, "false")
+                .build();
+
+        // Compare results with optimization enabled vs disabled to validate correctness.
+        // The rule inserts a local round-robin exchange between the outer PARTIAL and the chain
+        // leading to the inner FINAL when outer grouping keys are a strict subset of inner
+        // grouping keys, parallelizing the outer PARTIAL across local drivers.
+        String[] queries = {
+                // Outer key (orderstatus) is subset of inner keys (orderstatus, orderpriority)
+                "SELECT sum(s) FROM (SELECT sum(totalprice) AS s, orderstatus, orderpriority FROM orders GROUP BY orderstatus, orderpriority) GROUP BY orderstatus",
+                // Multiple aggregations in inner and outer
+                "SELECT sum(s), max(mx), min(mn) FROM (SELECT sum(totalprice) AS s, max(totalprice) AS mx, min(totalprice) AS mn, orderstatus, orderpriority FROM orders GROUP BY orderstatus, orderpriority) GROUP BY orderstatus",
+                // count aggregation
+                "SELECT sum(c) FROM (SELECT count(*) AS c, orderstatus, orderpriority FROM orders GROUP BY orderstatus, orderpriority) GROUP BY orderstatus",
+                // Three-level inner grouping, two-level outer
+                "SELECT sum(s) FROM (SELECT sum(extendedprice) AS s, linestatus, returnflag, shipmode FROM lineitem GROUP BY linestatus, returnflag, shipmode) GROUP BY linestatus, returnflag",
+                // avg aggregation (decomposable)
+                "SELECT avg(s) FROM (SELECT sum(totalprice) AS s, orderstatus, orderpriority FROM orders GROUP BY orderstatus, orderpriority) GROUP BY orderstatus",
+                // Negative-shape cases: the rule wouldn't fire in these plans. These queries are
+                // correctness-only regression guards (results must match with the property on vs off);
+                // plan-shape assertions in TestParallelizeChainedAggregationPlan verify the rule is
+                // a no-op for these shapes.
+                // Equal grouping keys — rule should not fire
+                "SELECT sum(s) FROM (SELECT sum(totalprice) AS s, orderstatus FROM orders GROUP BY orderstatus) GROUP BY orderstatus",
+                // Outer keys not subset of inner keys
+                "SELECT sum(s), orderpriority FROM (SELECT sum(totalprice) AS s, orderstatus, orderpriority FROM orders GROUP BY orderstatus, orderpriority) GROUP BY orderpriority",
+                // Global outer aggregation (no GROUP BY) — empty set is subset of inner keys, rule fires
+                "SELECT sum(s) FROM (SELECT sum(totalprice) AS s, orderstatus, orderpriority FROM orders GROUP BY orderstatus, orderpriority)",
+                "SELECT approx_percentile(s, 0.5) FROM (SELECT sum(totalprice) AS s, orderstatus, orderpriority FROM orders GROUP BY orderstatus, orderpriority)",
+        };
+
+        for (String query : queries) {
+            assertQueryWithSameQueryRunner(enabled, query, disabled);
         }
     }
 
@@ -8647,5 +8693,147 @@ public abstract class AbstractTestQueries
         assertQueryWithSameQueryRunner(enabledSession,
                 "SELECT max_by(totalprice, orderkey) FROM orders",
                 disabledSession);
+    }
+
+    @Test
+    public void testOptimizeRowInPredicate()
+    {
+        Session enabled = Session.builder(getSession())
+                .setSystemProperty(OPTIMIZE_ROW_IN_PREDICATE, "true")
+                .build();
+        Session disabled = Session.builder(getSession())
+                .setSystemProperty(OPTIMIZE_ROW_IN_PREDICATE, "false")
+                .build();
+
+        // Multi-column ROW IN
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT count(*) FROM orders WHERE (orderstatus, custkey) IN (('O', 370), ('F', 781), ('P', 1234))",
+                disabled);
+
+        // ROW IN as part of a larger AND conjunction — rewriter must walk into the AND
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT count(*) FROM orders WHERE (orderstatus, custkey) IN (('O', 370), ('F', 781)) AND totalprice > 1000",
+                disabled);
+
+        // Single-row candidate (degenerate but legal)
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT count(*) FROM orders WHERE (orderstatus, custkey) IN (('O', 370))",
+                disabled);
+
+        // Three columns
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT count(*) FROM orders WHERE (orderstatus, custkey, orderpriority) IN (('O', 370, '5-LOW'), ('F', 781, '1-URGENT'))",
+                disabled);
+
+        // Partition-key-shaped on lineitem (returnflag + linestatus is the canonical TPCH "partition" demo)
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT count(*) FROM lineitem WHERE (returnflag, linestatus) IN (('A', 'F'), ('N', 'O'), ('R', 'F'))",
+                disabled);
+
+        // Two-column with extra filter on a non-key column
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderkey FROM orders WHERE (orderstatus, custkey) IN (('O', 370), ('F', 781)) AND totalprice > 100000 ORDER BY orderkey LIMIT 10",
+                disabled);
+    }
+
+    @Test
+    public void testOptimizeRowNotInPredicate()
+    {
+        Session enabled = Session.builder(getSession())
+                .setSystemProperty(OPTIMIZE_ROW_IN_PREDICATE, "true")
+                .build();
+        Session disabled = Session.builder(getSession())
+                .setSystemProperty(OPTIMIZE_ROW_IN_PREDICATE, "false")
+                .build();
+
+        // Multi-column ROW NOT IN — restrict to a small partition first to bound the result
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT count(*) FROM orders WHERE orderstatus = 'O' AND (orderstatus, custkey) NOT IN (('O', 370), ('F', 781), ('P', 1234))",
+                disabled);
+
+        // ROW NOT IN with AND
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT count(*) FROM orders WHERE orderstatus = 'O' AND (orderstatus, custkey) NOT IN (('O', 370), ('F', 781)) AND totalprice > 1000",
+                disabled);
+
+        // Partition-key-shaped NOT IN on lineitem
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT count(*) FROM lineitem WHERE (returnflag, linestatus) NOT IN (('N', 'O'))",
+                disabled);
+    }
+
+    @Test
+    public void testPushFilterThroughSelectingAggregation()
+    {
+        Session enabled = Session.builder(getSession())
+                .setSystemProperty(PUSH_FILTER_THROUGH_SELECTING_AGGREGATION, "true")
+                .build();
+        Session disabled = Session.builder(getSession())
+                .setSystemProperty(PUSH_FILTER_THROUGH_SELECTING_AGGREGATION, "false")
+                .build();
+
+        // MAX with >= : pushdown safe
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, max(totalprice) FROM orders GROUP BY orderstatus HAVING max(totalprice) >= 100000",
+                disabled);
+
+        // MAX with > : pushdown safe
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, max(totalprice) FROM orders GROUP BY orderstatus HAVING max(totalprice) > 200000",
+                disabled);
+
+        // MIN with <= : pushdown safe
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, min(totalprice) FROM orders GROUP BY orderstatus HAVING min(totalprice) <= 1000",
+                disabled);
+
+        // MIN with < : pushdown safe
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, min(totalprice) FROM orders GROUP BY orderstatus HAVING min(totalprice) < 500",
+                disabled);
+
+        // MAX with <=: NOT safe to pushdown — must produce same results because rule should not fire
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, max(totalprice) FROM orders GROUP BY orderstatus HAVING max(totalprice) <= 200000",
+                disabled);
+
+        // MAX with =: ADD-pre-filter (x >= 60000) + KEEP HAVING (max(orderkey) = 60000)
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, max(orderkey) FROM orders GROUP BY orderstatus HAVING max(orderkey) = 60000",
+                disabled);
+
+        // MIN with =: ADD-pre-filter (x <= 1) + KEEP HAVING (min(orderkey) = 1)
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, min(orderkey) FROM orders GROUP BY orderstatus HAVING min(orderkey) = 1",
+                disabled);
+
+        // Multi-aggregate: rule should not fire (sum would be incorrect after pushdown)
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, max(totalprice), sum(totalprice) FROM orders GROUP BY orderstatus HAVING max(totalprice) >= 100000",
+                disabled);
+
+        // Reversed comparison: literal on left side
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, max(totalprice) FROM orders GROUP BY orderstatus HAVING 100000 <= max(totalprice)",
+                disabled);
+
+        // Mixed conjunction: pushable + non-pushable
+        assertQueryWithSameQueryRunner(enabled,
+                "SELECT orderstatus, max(totalprice) FROM orders GROUP BY orderstatus HAVING max(totalprice) >= 100000 AND orderstatus <> 'X'",
+                disabled);
+
+        // CTE-style: MAX in inner query, WHERE on the alias outside. Mirrors the real-world
+        // shape `WITH agg AS (SELECT MAX(x) AS m ...) SELECT * FROM agg WHERE m >= c`.
+        // The pushdown should propagate through the CTE projection all the way to the source.
+        assertQueryWithSameQueryRunner(enabled,
+                "WITH agg AS (SELECT custkey, MAX(totalprice) AS max_price FROM orders GROUP BY custkey) " +
+                        "SELECT custkey, max_price FROM agg WHERE max_price >= 200000",
+                disabled);
+
+        // Same shape with downstream join — verify the pushed predicate survives further optimization.
+        assertQueryWithSameQueryRunner(enabled,
+                "WITH agg AS (SELECT custkey, MAX(totalprice) AS max_price FROM orders GROUP BY custkey) " +
+                        "SELECT c.name, agg.max_price FROM agg JOIN customer c ON c.custkey = agg.custkey WHERE agg.max_price >= 300000",
+                disabled);
     }
 }

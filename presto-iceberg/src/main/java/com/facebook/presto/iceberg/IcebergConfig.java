@@ -31,6 +31,7 @@ import org.apache.iceberg.hadoop.HadoopFileIO;
 import java.util.EnumSet;
 import java.util.List;
 
+import static com.facebook.airlift.units.DataSize.Unit.GIGABYTE;
 import static com.facebook.airlift.units.DataSize.Unit.MEGABYTE;
 import static com.facebook.airlift.units.DataSize.succinctDataSize;
 import static com.facebook.presto.hive.HiveCompressionCodec.ZSTD;
@@ -80,6 +81,8 @@ public class IcebergConfig
     private String materializedViewDefaultStorageSchema;
     private int materializedViewMaxChangedPartitions = 100;
     private int materializedViewDefaultMaxSnapshotsPerRefresh;
+    private boolean aggregatePushDownEnabled = true;
+    private DataSize targetMaxFileSize = succinctDataSize(1, GIGABYTE);
 
     @NotNull
     public FileFormat getFileFormat()
@@ -542,6 +545,37 @@ public class IcebergConfig
     public IcebergConfig setMaterializedViewDefaultMaxSnapshotsPerRefresh(int materializedViewDefaultMaxSnapshotsPerRefresh)
     {
         this.materializedViewDefaultMaxSnapshotsPerRefresh = materializedViewDefaultMaxSnapshotsPerRefresh;
+        return this;
+    }
+
+    public boolean isAggregatePushDownEnabled()
+    {
+        return aggregatePushDownEnabled;
+    }
+
+    @Config("iceberg.aggregate-push-down-enabled")
+    @ConfigDescription("Controls whether to push down aggregate (MIN/MAX/COUNT) to Iceberg based on data file stats.")
+    public IcebergConfig setAggregatePushDownEnabled(boolean aggregatePushDownEnabled)
+    {
+        this.aggregatePushDownEnabled = aggregatePushDownEnabled;
+        return this;
+    }
+
+    @NotNull
+    public DataSize getTargetMaxFileSize()
+    {
+        return targetMaxFileSize;
+    }
+
+    @Min(1)
+    @Config("iceberg.target-max-file-size")
+    @ConfigDescription("Target maximum size of written files; the actual size may be larger")
+    public IcebergConfig setTargetMaxFileSize(DataSize targetMaxFileSize)
+    {
+        if (targetMaxFileSize.toBytes() < 1) {
+            throw new IllegalArgumentException("iceberg.target-max-file-size must be at least 1 byte");
+        }
+        this.targetMaxFileSize = targetMaxFileSize;
         return this;
     }
 }

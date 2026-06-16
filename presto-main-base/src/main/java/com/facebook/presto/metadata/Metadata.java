@@ -333,8 +333,14 @@ public interface Metadata
 
     /**
      * Begin insert query
+     *
+     * @param session the session
+     * @param tableHandle the table handle
+     * @param insertColumnNames the list of column names that are explicitly specified in the INSERT statement.
+     *                          An empty list indicates no explicit column specification (e.g. INSERT INTO table VALUES ...),
+     *                          which implies inserting into all columns.
      */
-    InsertTableHandle beginInsert(Session session, TableHandle tableHandle);
+    InsertTableHandle beginInsert(Session session, TableHandle tableHandle, List<String> insertColumnNames);
 
     /**
      * Finish insert query

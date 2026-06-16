@@ -77,6 +77,8 @@ public final class IcebergSessionProperties
     public static final String MAX_PARTITIONS_PER_WRITER = "max_partitions_per_writer";
     public static final String MATERIALIZED_VIEW_MAX_CHANGED_PARTITIONS = "materialized_view_max_changed_partitions";
     public static final String MATERIALIZED_VIEW_DEFAULT_MAX_SNAPSHOTS_PER_REFRESH = "materialized_view_default_max_snapshots_per_refresh";
+    public static final String AGGREGATE_PUSH_DOWN_ENABLED = "aggregate_push_down_enabled";
+    public static final String TARGET_MAX_FILE_SIZE = "target_max_file_size";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -265,7 +267,28 @@ public final class IcebergSessionProperties
                         "Default upper bound on snapshots consumed per base table per refresh when the materialized view " +
                                 "does not override it via the max_snapshots_per_refresh table property. 0 means unbounded.",
                         icebergConfig.getMaterializedViewDefaultMaxSnapshotsPerRefresh(),
-                        false));
+                        false))
+                .add(booleanProperty(
+                        AGGREGATE_PUSH_DOWN_ENABLED,
+                        "Controls whether to push down aggregate (MIN/MAX/COUNT) to Iceberg based on data file stats",
+                        icebergConfig.isAggregatePushDownEnabled(),
+                        false))
+                .add(new PropertyMetadata<>(
+                        TARGET_MAX_FILE_SIZE,
+                        "Target maximum size of written files; the actual size may be larger",
+                        createUnboundedVarcharType(),
+                        DataSize.class,
+                        icebergConfig.getTargetMaxFileSize(),
+                        false,
+                        value -> {
+                            DataSize dataSize = DataSize.valueOf((String) value);
+                            if (dataSize.toBytes() < 1) {
+                                throw new PrestoException(INVALID_SESSION_PROPERTY,
+                                        format("Invalid value for %s: %s. It must be at least 1 byte.", TARGET_MAX_FILE_SIZE, dataSize));
+                            }
+                            return dataSize;
+                        },
+                        DataSize::toString));
 
         nessieConfig.ifPresent((config) -> propertiesBuilder
                 .add(stringProperty(
@@ -437,5 +460,15 @@ public final class IcebergSessionProperties
             return OptionalInt.empty();
         }
         return OptionalInt.of(value);
+    }
+
+    public static boolean isAggregatePushDownEnabled(ConnectorSession session)
+    {
+        return session.getProperty(AGGREGATE_PUSH_DOWN_ENABLED, Boolean.class);
+    }
+
+    public static DataSize getTargetMaxFileSize(ConnectorSession session)
+    {
+        return session.getProperty(TARGET_MAX_FILE_SIZE, DataSize.class);
     }
 }

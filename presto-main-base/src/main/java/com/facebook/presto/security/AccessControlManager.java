@@ -46,7 +46,9 @@ import jakarta.inject.Inject;
 import org.weakref.jmx.Managed;
 import org.weakref.jmx.Nested;
 
-import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.Principal;
 import java.security.cert.X509Certificate;
 import java.util.HashMap;
@@ -72,7 +74,7 @@ public class AccessControlManager
         implements AccessControl
 {
     private static final Logger log = Logger.get(AccessControlManager.class);
-    private static final File ACCESS_CONTROL_CONFIGURATION = new File("etc/access-control.properties");
+    private static final Path ACCESS_CONTROL_CONFIGURATION = Paths.get("etc/access-control.properties");
     private static final String ACCESS_CONTROL_PROPERTY_NAME = "access-control.name";
 
     private final TransactionManager transactionManager;
@@ -123,11 +125,11 @@ public class AccessControlManager
     public void loadSystemAccessControl()
             throws Exception
     {
-        if (ACCESS_CONTROL_CONFIGURATION.exists()) {
-            Map<String, String> properties = loadProperties(ACCESS_CONTROL_CONFIGURATION);
+        if (Files.exists(ACCESS_CONTROL_CONFIGURATION)) {
+            Map<String, String> properties = loadProperties(ACCESS_CONTROL_CONFIGURATION.toFile());
             checkArgument(!isNullOrEmpty(properties.get(ACCESS_CONTROL_PROPERTY_NAME)),
                     "Access control configuration %s does not contain %s",
-                    ACCESS_CONTROL_CONFIGURATION.getAbsoluteFile(),
+                    ACCESS_CONTROL_CONFIGURATION.toAbsolutePath().toFile(),
                     ACCESS_CONTROL_PROPERTY_NAME);
 
             loadSystemAccessControl(properties);

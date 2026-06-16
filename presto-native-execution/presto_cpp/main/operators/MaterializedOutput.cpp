@@ -78,8 +78,6 @@ core::PlanNodePtr MaterializedOutputNode::create(
       ? obj["replicateNullsAndAny"].asBool()
       : false;
 
-  // Buffer cannot be deserialized — it is set externally by the plan
-  // converter.
   return std::make_shared<MaterializedOutputNode>(
       deserializePlanNodeId(obj),
       std::move(keyPtrs),
@@ -87,8 +85,8 @@ core::PlanNodePtr MaterializedOutputNode::create(
       std::move(outputType),
       std::move(partitionFunctionSpec),
       replicateNullsAndAny,
-      std::move(source),
-      std::shared_ptr<MaterializedOutputBuffer>{});
+      ShuffleWriterMetadata{},
+      std::move(source));
 }
 
 MaterializedOutput::MaterializedOutput(
@@ -114,7 +112,7 @@ MaterializedOutput::MaterializedOutput(
                                       numDestinations_,
                                       /*localExchange=*/false)),
       replicateNullsAndAny_(planNode->isReplicateNullsAndAny()),
-      buffer_(planNode->buffer()),
+      buffer_(MaterializedOutputBuffer::getBuffer(ctx->task->taskId())),
       targetSizeInBytes_(
           std::clamp(
               static_cast<int64_t>(numDestinations_) * kDefaultAvgRowSize,
@@ -244,14 +242,22 @@ void MaterializedOutput::serializeVariableWidthRows(
 void MaterializedOutput::ensureFlatBufferCapacity(int64_t additionalBytes) {
   const auto requiredSize = flatBufferSize_ + additionalBytes;
   const auto currentCapacity = flatBuffer_ ? flatBuffer_->capacity() : 0;
-  if (requiredSize > static_cast<int64_t>(currentCapacity)) {
-    const auto newSize =
-        std::max(requiredSize, static_cast<int64_t>(currentCapacity) * 2);
-    if (!flatBuffer_) {
-      flatBuffer_ = velox::AlignedBuffer::allocate<char>(newSize, pool());
-    } else {
-      velox::AlignedBuffer::reallocate<char>(&flatBuffer_, newSize);
-    }
+  // Nothing to do once a buffer exists and is large enough.
+  if (flatBuffer_ != nullptr &&
+      requiredSize <= static_cast<int64_t>(currentCapacity)) {
+    return;
+  }
+  // Always allocate a non-null buffer on first use, even for a zero-byte batch
+  // (e.g. a zero-column / row-count-only output type where
+  // CompactRow::fixedRowSize() == 0). serializeRows() and buildRowGroup() index
+  // into flatBuffer_ unconditionally, so a null buffer would be dereferenced
+  // and crash. Allocate at least one byte.
+  const auto newSize = std::max<int64_t>(
+      {requiredSize, static_cast<int64_t>(currentCapacity) * 2, 1});
+  if (!flatBuffer_) {
+    flatBuffer_ = velox::AlignedBuffer::allocate<char>(newSize, pool());
+  } else {
+    velox::AlignedBuffer::reallocate<char>(&flatBuffer_, newSize);
   }
 }
 
@@ -445,16 +451,7 @@ void MaterializedOutput::flushBatch() {
 
     auto iobuf = buildRowGroup(rows);
 
-    // Enqueue always accepts the data — backpressure is advisory. If the
-    // buffer is full, enqueue returns true and populates a future. We record
-    // the future but continue flushing remaining partitions. The driver
-    // suspends on the next isBlocked() call, not mid-loop. The overshoot
-    // per flush is bounded by targetSizeInBytes_ (1-16MB).
-    ContinueFuture future;
-    if (buffer_->enqueue(partition, std::move(iobuf), &future)) {
-      blockingReason_ = BlockingReason::kWaitForConsumer;
-      future_ = std::move(future);
-    }
+    buffer_->enqueue(partition, std::move(iobuf));
   }
 
   // Reset accumulated state.
@@ -489,8 +486,8 @@ bool MaterializedOutput::isFinished() {
 }
 
 void MaterializedOutput::recordBufferStats() {
-  for (const auto& [key, value] : buffer_->stats()) {
-    addRuntimeStat(key, velox::RuntimeCounter(value));
+  for (const auto& [key, metric] : buffer_->stats()) {
+    addRuntimeStat(key, velox::RuntimeCounter(metric.sum, metric.unit));
   }
 }
 

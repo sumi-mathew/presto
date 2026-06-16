@@ -231,7 +231,7 @@ SystemConfig::SystemConfig() {
           NUM_PROP(kLargestSizeClassPages, 256),
           BOOL_PROP(kEnableVeloxTaskLogging, false),
           BOOL_PROP(kEnableVeloxExprSetLogging, false),
-          NUM_PROP(kLocalShuffleMaxPartitionBytes, 268435456),
+          NUM_PROP(kLocalShuffleMaxPartitionBytes, 65536),
           STR_PROP(kShuffleName, ""),
           BOOL_PROP(kExchangeMaterializationEnabled, false),
           NUM_PROP(
@@ -241,7 +241,7 @@ SystemConfig::SystemConfig() {
           NUM_PROP(
               kExchangeMaterializationOutputBufferPerPartitionMaxBytes,
               130L * 1024),
-          BOOL_PROP(kExchangeMaterializationOutputBufferUseSystemMemory, false),
+          NUM_PROP(kExchangeMaterializationReclaimDrainThresholdRatio, 0.67),
           STR_PROP(kRemoteFunctionServerCatalogName, ""),
           STR_PROP(kRemoteFunctionServerSerde, "presto_page"),
           BOOL_PROP(kHttpEnableAccessLog, false),
@@ -801,9 +801,21 @@ int64_t SystemConfig::exchangeMaterializationOutputBufferPerPartitionMaxBytes()
       .value_or(130L * 1024);
 }
 
-bool SystemConfig::exchangeMaterializationOutputBufferUseSystemMemory() const {
+double SystemConfig::exchangeMaterializationReclaimDrainThresholdRatio() const {
+  return optionalProperty<double>(
+             kExchangeMaterializationReclaimDrainThresholdRatio)
+      .value_or(0.67);
+}
+
+bool SystemConfig::exchangeMaterializationReclaimWaitForWriterDrainEnabled()
+    const {
   return optionalProperty<bool>(
-             kExchangeMaterializationOutputBufferUseSystemMemory)
+             kExchangeMaterializationReclaimWaitForWriterDrainEnabled)
+      .value_or(false);
+}
+
+bool SystemConfig::exchangeMaterializationReclaimHighPriority() const {
+  return optionalProperty<bool>(kExchangeMaterializationReclaimHighPriority)
       .value_or(false);
 }
 

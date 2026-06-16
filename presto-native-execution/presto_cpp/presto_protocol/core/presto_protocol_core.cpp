@@ -1018,6 +1018,15 @@ void to_json(json& j, const AggregationNode& p) {
       "aggregations");
   to_json_key(
       j,
+      "aggregationOutputs",
+      p.aggregationOutputs,
+      "AggregationNode",
+      "List<VariableReferenceExpression>",
+      "aggregationOutputs");
+  // to_json_key for std::shared_ptr only emits when the pointer is non-null,
+  // matching the pattern for other Optional<> ExtraFields.
+  to_json_key(
+      j,
       "groupingSets",
       p.groupingSets,
       "AggregationNode",
@@ -1066,6 +1075,17 @@ void from_json(const json& j, AggregationNode& p) {
       "AggregationNode",
       "Map<VariableReferenceExpression, Aggregation>",
       "aggregations");
+  // from_json_key for std::shared_ptr tolerates a missing key, so older
+  // coordinators that predate this field deserialize cleanly with
+  // p.aggregationOutputs left as nullptr; the converter falls back to
+  // iterating `aggregations` in that case.
+  from_json_key(
+      j,
+      "aggregationOutputs",
+      p.aggregationOutputs,
+      "AggregationNode",
+      "List<VariableReferenceExpression>",
+      "aggregationOutputs");
   from_json_key(
       j,
       "groupingSets",
@@ -1140,6 +1160,18 @@ void from_json(const json& j, std::shared_ptr<ConnectorTableHandle>& p) {
     throw ParseError(
         std::string(e.what()) + " ConnectorTableHandle  ConnectorTableHandle");
   }
+
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
+
   getConnectorProtocol(type).from_json(j, p);
 }
 } // namespace facebook::presto::protocol
@@ -1169,6 +1201,17 @@ void from_json(const json& j, std::shared_ptr<ConnectorTransactionHandle>& p) {
     throw ParseError(
         std::string(e.what()) +
         " ConnectorTransactionHandle  ConnectorTransactionHandle");
+  }
+
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
   }
 
   if (type == "$remote") {
@@ -2502,6 +2545,17 @@ void from_json(const json& j, std::shared_ptr<ConnectorSplit>& p) {
     throw ParseError(std::string(e.what()) + " ConnectorSplit");
   }
 
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
+
   if (type == "$remote") {
     auto k = std::make_shared<RemoteSplit>();
     j.get_to(*k);
@@ -3090,6 +3144,17 @@ void from_json(const json& j, std::shared_ptr<ConnectorPartitioningHandle>& p) {
     throw ParseError(std::string(e.what()) + " ConnectorPartitioningHandle");
   }
 
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
+
   if (type == "$remote") {
     auto k = std::make_shared<SystemPartitioningHandle>();
     j.get_to(*k);
@@ -3486,6 +3551,18 @@ void from_json(const json& j, std::shared_ptr<ConnectorOutputTableHandle>& p) {
         std::string(e.what()) +
         " ConnectorOutputTableHandle  ConnectorOutputTableHandle");
   }
+
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
+
   getConnectorProtocol(type).from_json(j, p);
 }
 } // namespace facebook::presto::protocol
@@ -3640,6 +3717,18 @@ void from_json(const json& j, std::shared_ptr<ConnectorDeleteTableHandle>& p) {
         std::string(e.what()) +
         " ConnectorDeleteTableHandle  ConnectorDeleteTableHandle");
   }
+
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
+
   getConnectorProtocol(type).from_json(j, p);
 }
 } // namespace facebook::presto::protocol
@@ -3909,6 +3998,18 @@ void from_json(
         std::string(e.what()) +
         " ConnectorDistributedProcedureHandle  ConnectorDistributedProcedureHandle");
   }
+
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
+
   getConnectorProtocol(type).from_json(j, p);
 }
 } // namespace facebook::presto::protocol
@@ -6016,6 +6117,18 @@ void from_json(const json& j, std::shared_ptr<ConnectorIndexHandle>& p) {
     throw ParseError(
         std::string(e.what()) + " ConnectorIndexHandle ConnectorIndexHandle");
   }
+
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
+
   getConnectorProtocol(type).from_json(j, p);
 }
 } // namespace facebook::presto::protocol
@@ -6238,6 +6351,17 @@ void from_json(const json& j, std::shared_ptr<ColumnHandle>& p) {
   } catch (json::parse_error& e) {
     throw ParseError(std::string(e.what()) + " ColumnHandle  ColumnHandle");
   }
+
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
   getConnectorProtocol(type).from_json(j, p);
 }
 } // namespace facebook::presto::protocol
@@ -6259,6 +6383,18 @@ void from_json(const json& j, std::shared_ptr<ConnectorTableLayoutHandle>& p) {
         std::string(e.what()) +
         " ConnectorTableLayoutHandle  ConnectorTableLayoutHandle");
   }
+
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
+
   getConnectorProtocol(type).from_json(j, p);
 }
 } // namespace facebook::presto::protocol
@@ -6445,6 +6581,18 @@ void from_json(const json& j, std::shared_ptr<ConnectorInsertTableHandle>& p) {
         std::string(e.what()) +
         " ConnectorInsertTableHandle  ConnectorInsertTableHandle");
   }
+
+  if (j.contains("customSerializedValue")) {
+    VELOX_CHECK(
+        !type.empty() && type[0] != '$',
+        "Internal handle type '{}' should not have customSerializedValue",
+        type);
+    std::string binaryData = velox::encoding::Base64::decode(
+        j["customSerializedValue"].get<std::string>());
+    getConnectorProtocol(type).deserialize(binaryData, p);
+    return;
+  }
+
   getConnectorProtocol(type).from_json(j, p);
 }
 } // namespace facebook::presto::protocol

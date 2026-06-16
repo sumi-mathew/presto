@@ -1696,10 +1696,9 @@ public abstract class IcebergDistributedTestBase
         Session session = deleteAsJoinEnabled(joinRewriteEnabled);
         String tableName = "test_v2_row_delete_" + randomTableSuffix();
         assertUpdate(session, "CREATE TABLE " + tableName + " with (\"write.format.default\" = '" + fileFormat + "') AS SELECT * FROM tpch.tiny.nation order by nationkey", 25);
-        Table icebergTable = updateTable(tableName);
-        String dataFilePath = (String) computeActual("SELECT file_path FROM \"" + tableName + "$files\" LIMIT 1").getOnlyValue();
 
-        writePositionDeleteToNationTable(icebergTable, dataFilePath, 0);
+        assertUpdate(session, "DELETE FROM " + tableName + " WHERE nationkey = 0", 1);
+        Table icebergTable = updateTable(tableName);
         testCheckDeleteFiles(icebergTable, 1, ImmutableList.of(POSITION_DELETES));
         assertQuery(session, "SELECT count(*) FROM " + tableName, "VALUES 24");
         assertQuery(session, "SELECT nationkey FROM " + tableName, "SELECT nationkey FROM nation WHERE nationkey != 0");
@@ -1709,7 +1708,8 @@ public abstract class IcebergDistributedTestBase
         assertQuery(session, "SELECT count(*) FROM " + tableName, "VALUES 19");
         assertQuery(session, "SELECT nationkey FROM " + tableName, "SELECT nationkey FROM nation WHERE regionkey != 1 AND nationkey != 0");
 
-        writePositionDeleteToNationTable(icebergTable, dataFilePath, 7);
+        assertUpdate(session, "DELETE FROM " + tableName + " WHERE nationkey = 7", 1);
+        icebergTable = updateTable(tableName);
         testCheckDeleteFiles(icebergTable, 3, ImmutableList.of(POSITION_DELETES, POSITION_DELETES, EQUALITY_DELETES));
         assertQuery(session, "SELECT count(*) FROM " + tableName, "VALUES 18");
         assertQuery(session, "SELECT nationkey FROM " + tableName, "SELECT nationkey FROM nation WHERE regionkey != 1 AND nationkey NOT IN (0, 7)");
@@ -1718,6 +1718,16 @@ public abstract class IcebergDistributedTestBase
         testCheckDeleteFiles(icebergTable, 4, ImmutableList.of(POSITION_DELETES, POSITION_DELETES, EQUALITY_DELETES, EQUALITY_DELETES));
         assertQuery(session, "SELECT count(*) FROM " + tableName, "VALUES 13");
         assertQuery(session, "SELECT nationkey FROM " + tableName, "SELECT nationkey FROM nation WHERE regionkey NOT IN (1, 2) AND nationkey NOT IN (0, 7)");
+
+        assertUpdate(session, "UPDATE " + tableName + " SET name = 'ENGLAND' WHERE nationkey = 23", 1);
+        icebergTable = updateTable(tableName);
+        if (fileFormat.equalsIgnoreCase(ORC.toString())) {
+            testCheckDeleteFiles(icebergTable, 6, ImmutableList.of(POSITION_DELETES, POSITION_DELETES, POSITION_DELETES, POSITION_DELETES, EQUALITY_DELETES, EQUALITY_DELETES));
+        }
+        else {
+            testCheckDeleteFiles(icebergTable, 5, ImmutableList.of(POSITION_DELETES, POSITION_DELETES, POSITION_DELETES, EQUALITY_DELETES, EQUALITY_DELETES));
+        }
+        assertQuery(session, "SELECT name FROM " + tableName + " WHERE nationkey = 23", "VALUES 'ENGLAND'");
     }
 
     @Test(dataProvider = "equalityDeleteOptions")
@@ -4026,6 +4036,111 @@ public abstract class IcebergDistributedTestBase
         }
         finally {
             assertUpdate("DROP TABLE " + sourceTable);
+            assertUpdate("DROP TABLE " + targetTable);
+        }
+    }
+
+    @Test
+    public void testMergeWhenClausePredicates()
+    {
+        String targetTable = "merge_when_predicates_" + randomTableSuffix();
+        try {
+            assertUpdate(format("CREATE TABLE %s (id INT, count INT)", targetTable));
+            assertUpdate(format("INSERT INTO %s VALUES (1, 5), (2, 10), (3, 7)", targetTable), 3);
+
+            @Language("SQL") String mergeSql =
+                    format("MERGE INTO %s t USING ", targetTable) +
+                            "(VALUES (1, -3), (2, -10), (3, 0), (4, 8), (5, 0)) AS s(id, count_delta) " +
+                            "ON t.id = s.id " +
+                            "WHEN MATCHED AND t.count + s.count_delta > 0 THEN UPDATE SET count = t.count + s.count_delta " +
+                            "WHEN MATCHED AND t.count + s.count_delta = 0 THEN DELETE " +
+                            "WHEN NOT MATCHED AND s.count_delta <> 0 THEN INSERT (id, count) VALUES (s.id, s.count_delta)";
+
+            assertUpdate(mergeSql, 4);
+
+            assertQuery("SELECT * FROM " + targetTable, "VALUES (1, 2), (3, 7), (4, 8)");
+        }
+        finally {
+            assertUpdate("DROP TABLE " + targetTable);
+        }
+    }
+
+    @Test
+    public void testMergeWhenClauseOrderSensitivity()
+    {
+        String targetTable = "merge_when_order_" + randomTableSuffix();
+        try {
+            assertUpdate(format("CREATE TABLE %s (id INT, status VARCHAR)", targetTable));
+            assertUpdate(format("INSERT INTO %s VALUES (1, 'new'), (2, 'new')", targetTable), 2);
+
+            @Language("SQL") String mergeSql =
+                    format("MERGE INTO %s t USING ", targetTable) +
+                            "(VALUES (1, 100), (2, 5)) AS s(id, amount) " +
+                            "ON t.id = s.id " +
+                            "WHEN MATCHED AND s.amount > 50 THEN UPDATE SET status = 'big' " +
+                            "WHEN MATCHED AND s.amount <= 50 THEN UPDATE SET status = 'small'";
+
+            assertUpdate(mergeSql, 2);
+
+            assertQuery("SELECT * FROM " + targetTable, "VALUES (1, 'big'), (2, 'small')");
+        }
+        finally {
+            assertUpdate("DROP TABLE " + targetTable);
+        }
+    }
+
+    @Test
+    public void testMergeWhenClauseAllPredicatesFailIsNoOp()
+    {
+        String targetTable = "merge_when_noop_" + randomTableSuffix();
+        try {
+            assertUpdate(format("CREATE TABLE %s (id INT, value INT)", targetTable));
+            assertUpdate(format("INSERT INTO %s VALUES (1, 10), (2, 20)", targetTable), 2);
+
+            @Language("SQL") String mergeSql =
+                    format("MERGE INTO %s t USING ", targetTable) +
+                            "(VALUES (1, 100), (3, 0)) AS s(id, delta) " +
+                            "ON t.id = s.id " +
+                            "WHEN MATCHED AND s.delta < 0 THEN UPDATE SET value = t.value + s.delta " +
+                            "WHEN NOT MATCHED AND s.delta <> 0 THEN INSERT (id, value) VALUES (s.id, s.delta)";
+
+            assertUpdate(mergeSql, 0);
+
+            assertQuery("SELECT * FROM " + targetTable, "VALUES (1, 10), (2, 20)");
+        }
+        finally {
+            assertUpdate("DROP TABLE " + targetTable);
+        }
+    }
+
+    @Test
+    public void testMergeWhenClauseAnalyzerErrors()
+    {
+        String targetTable = "merge_when_errors_" + randomTableSuffix();
+        try {
+            assertUpdate(format("CREATE TABLE %s (id INT, value INT)", targetTable));
+
+            assertQueryFails(
+                    format("MERGE INTO %s t USING (VALUES (1, 10)) AS s(id, delta) ON t.id = s.id " +
+                            "WHEN MATCHED AND s.delta + 1 THEN UPDATE SET value = s.delta", targetTable),
+                    ".*The MERGE WHEN condition must evaluate to a boolean.*");
+
+            assertQueryFails(
+                    format("MERGE INTO %s t USING (VALUES (1, 10)) AS s(id, delta) ON t.id = s.id " +
+                            "WHEN MATCHED AND s.nonexistent > 0 THEN UPDATE SET value = s.delta", targetTable),
+                    ".*'s\\.nonexistent' cannot be resolved.*");
+
+            assertQueryFails(
+                    format("MERGE INTO %s t USING (VALUES (1, 10)) AS s(id, delta) ON t.id = s.id " +
+                            "WHEN MATCHED AND count(s.delta) > 0 THEN UPDATE SET value = s.delta", targetTable),
+                    ".*MERGE WHEN clause cannot contain aggregations.*");
+
+            assertQueryFails(
+                    format("MERGE INTO %s t USING (VALUES (1, 10)) AS s(id, delta) ON t.id = s.id " +
+                            "WHEN MATCHED AND row_number() OVER (ORDER BY s.delta) > 0 THEN UPDATE SET value = s.delta", targetTable),
+                    ".*MERGE WHEN clause cannot contain aggregations, window functions or grouping operations.*");
+        }
+        finally {
             assertUpdate("DROP TABLE " + targetTable);
         }
     }

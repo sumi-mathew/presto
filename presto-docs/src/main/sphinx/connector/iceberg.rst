@@ -314,8 +314,7 @@ the data and delete files of Iceberg tables are stored in S3. An example configu
     hive.s3.endpoint=http://192.168.0.103:9878
     hive.s3.path-style-access=true
 
-Presto C++ Support
-^^^^^^^^^^^^^^^^^^
+.. rubric:: Presto C++ Support
 
 ``HIVE``, ``NESSIE``, ``REST``, and ``HADOOP`` Iceberg catalogs are supported in Presto C++.
 
@@ -342,18 +341,18 @@ Property Name                                           Description             
                                                         is required if the iceberg.catalog.type is ``hadoop``.
                                                         Otherwise, it will be ignored.
 
-``iceberg.file-format``                                 The storage file format for Iceberg tables. The available     ``PARQUET``                        Yes                 No, write is not supported yet
+``iceberg.file-format``                                 The storage file format for Iceberg tables. The available     ``PARQUET``                        Yes                 No, write is not supported
                                                         values are ``PARQUET`` and ``ORC``.
 
-``iceberg.compression-codec``                           The compression codec to use when writing files. The          ``ZSTD``                           Yes                 No, write is not supported yet
+``iceberg.compression-codec``                           The compression codec to use when writing files. The          ``ZSTD``                           Yes                 No, write is not supported
                                                         available values are ``NONE``, ``SNAPPY``, ``GZIP``,
                                                         ``LZ4``, and ``ZSTD``.
-                                                        
+
                                                         Note: ``LZ4`` is only available when
                                                         ``iceberg.file-format=ORC``.
 
 
-``iceberg.max-partitions-per-writer``                   The maximum number of partitions handled per writer.          ``100``                            Yes                 No, write is not supported yet
+``iceberg.max-partitions-per-writer``                   The maximum number of partitions handled per writer.          ``100``                            Yes                 No, write is not supported
 
 ``iceberg.minimum-assigned-split-weight``               A decimal value in the range (0, 1] is used as a minimum      ``0.05``                           Yes                 Yes
                                                         for weights assigned to each split. A low value may improve
@@ -403,16 +402,26 @@ Property Name                                           Description             
 
 ``iceberg.split-manager-threads``                       Number of threads to use for generating Iceberg splits.       ``Number of available processors`` Yes                 Yes, only needed on coordinator
 
-``iceberg.metadata-previous-versions-max``              The maximum number of old metadata files to keep in           ``100``                            Yes                 No, write is not supported yet
+``iceberg.metadata-previous-versions-max``              The maximum number of old metadata files to keep in           ``100``                            Yes                 No, write is not supported
                                                         current metadata log.
 
-``iceberg.metadata-delete-after-commit``                Set to ``true`` to delete the oldest metadata files after     ``false``                          Yes                 No, write is not supported yet
+``iceberg.metadata-delete-after-commit``                Set to ``true`` to delete the oldest metadata files after     ``false``                          Yes                 No, write is not supported
                                                         each commit.
 
-``iceberg.metrics-max-inferred-column``                 The maximum number of columns for which metrics               ``100``                            Yes                 No, write is not supported yet
+``iceberg.metrics-max-inferred-column``                 The maximum number of columns for which metrics               ``100``                            Yes                 No, write is not supported
                                                         are collected.
 ``iceberg.max-statistics-file-cache-size``              Maximum size in bytes that should be consumed by the          ``256MB``                          Yes                 Yes, only needed on coordinator
                                                         statistics file cache.
+
+``iceberg.aggregate-push-down-enabled``                 Controls whether to push down aggregate (MIN/MAX/COUNT) to    ``true``                           Yes                 Yes
+                                                        Iceberg based on data file stats.
+
+``iceberg.target-max-file-size``                        Target maximum size of written files; the actual size may     ``1GB``                            Yes                 No, write is not supported
+                                                        be larger. This property accepts values in the format of a
+                                                        number immediately followed by a unit (``40kB``,
+                                                        ``256MB``, ``1GB``). Supported units are: ``B`` (bytes),
+                                                        ``kB`` (kilobytes), ``MB`` (megabytes), ``GB`` (gigabytes),
+                                                        ``TB`` (terabytes), ``PB`` (petabytes).
 ======================================================= ============================================================= ================================== =================== =============================================
 
 Table Properties
@@ -435,10 +444,10 @@ The following table properties are available, which are specific to the Presto I
 ========================================================   ===============================================================   ===================== =================== =============================================
 Property Name                                              Description                                                       Default               Presto Java Support Presto C++ Support
 ========================================================   ===============================================================   ===================== =================== =============================================
-``commit.retry.num-retries``                               Determines the number of attempts for committing the metadata     ``4``                 Yes                 No, write is not supported yet
+``commit.retry.num-retries``                               Determines the number of attempts for committing the metadata     ``4``                 Yes                 No, write is not supported
                                                            in case of concurrent upsert requests, before failing.
 
-``format-version``                                         Optionally specifies the format version of the Iceberg            ``2``                 Yes                 No, write is not supported yet
+``format-version``                                         Optionally specifies the format version of the Iceberg            ``2``                 Yes                 No, write is not supported
                                                            specification to use for new tables, either ``1`` or ``2``.
 
 ``location``                                               Optionally specifies the file system location URI for                                   Yes                 Yes
@@ -452,29 +461,29 @@ Property Name                                              Description          
                                                            for a table scan. Generated splits may still be larger or
                                                            smaller than this value. Must be specified in bytes.
 
-``write.data.path``                                        Optionally specifies the file system location URI for                                   Yes                 No, write is not supported yet
+``write.data.path``                                        Optionally specifies the file system location URI for                                   Yes                 No, write is not supported
                                                            storing the data and delete files of the table. This only
                                                            applies to files written after this property is set. Files
                                                            previously written aren't relocated to reflect this
                                                            parameter.
 
-``write.delete.mode``                                      Optionally specifies the write delete mode of the Iceberg         ``merge-on-read``     Yes                 No, write is not supported yet
+``write.delete.mode``                                      Optionally specifies the write delete mode of the Iceberg         ``merge-on-read``     Yes                 No, write is not supported
                                                            specification to use for new tables, either ``copy-on-write``
                                                            or ``merge-on-read``.
 
-``write.format.default``                                   Optionally specifies the format of table data files,              ``PARQUET``           Yes                 No, write is not supported yet
+``write.format.default``                                   Optionally specifies the format of table data files,              ``PARQUET``           Yes                 No, write is not supported
                                                            either ``PARQUET`` or ``ORC``.
 
-``write.metadata.previous-versions-max``                   Optionally specifies the max number of old metadata files to      ``100``               Yes                 No, write is not supported yet
+``write.metadata.previous-versions-max``                   Optionally specifies the max number of old metadata files to      ``100``               Yes                 No, write is not supported
                                                            keep in current metadata log.
 
-``write.metadata.delete-after-commit.enabled``             Set to ``true`` to delete the oldest metadata file after          ``false``             Yes                 No, write is not supported yet
+``write.metadata.delete-after-commit.enabled``             Set to ``true`` to delete the oldest metadata file after          ``false``             Yes                 No, write is not supported
                                                            each commit.
 
-``write.metadata.metrics.max-inferred-column-defaults``    Optionally specifies the maximum number of columns for which      ``100``               Yes                 No, write is not supported yet
+``write.metadata.metrics.max-inferred-column-defaults``    Optionally specifies the maximum number of columns for which      ``100``               Yes                 No, write is not supported
                                                            metrics are collected.
 
-``write.update.mode``                                      Optionally specifies the write update mode of the Iceberg         ``merge-on-read``     Yes                 No, write is not supported yet
+``write.update.mode``                                      Optionally specifies the write update mode of the Iceberg         ``merge-on-read``     Yes                 No, write is not supported
                                                            specification to use for new tables, either ``copy-on-write``
                                                            or ``merge-on-read``.
 
@@ -562,6 +571,13 @@ Session properties set behavior changes for queries executed within the given se
        ``iceberg.rows-for-metadata-optimization-threshold`` in the current session.
      - Yes
      - Yes
+   * - .. _iceberg-sess-target-max-file-size:
+
+       ``iceberg.target_max_file_size``
+     - Overrides the behavior of the connector property
+       ``iceberg.target-max-file-size`` in the current session.
+     - Yes
+     - No
    * - .. _iceberg-sess-target-split-size-bytes:
 
        ``iceberg.target_split_size_bytes``
@@ -618,6 +634,30 @@ Session properties set behavior changes for queries executed within the given se
        table property. ``0`` means unbounded. Default: ``0``
      - Yes
      - Yes
+   * - .. _iceberg-sess-materialized-view-stitching-strategy:
+
+       ``materialized_view_stitching_strategy``
+     - Controls when query-time stitching applies to partially stale materialized views.
+       Only takes effect when ``materialized_view_stale_read_behavior`` is ``USE_STITCHING``.
+
+       - ``ALWAYS`` (default): stitch whenever possible.
+       - ``NEVER``: always use the full view query.
+       - ``AUTOMATIC``: the cost-based optimizer chooses between the stitched union and
+         the full view query; falls back to row-count comparison when stats are unknown.
+     - Yes
+     - Yes
+   * - .. _iceberg-sess-materialized-view-incremental-refresh-strategy:
+
+       ``materialized_view_incremental_refresh_strategy``
+     - Controls when incremental (delta) refresh applies to materialized views with
+       ``refresh_type = 'INCREMENTAL'``.
+
+       - ``ALWAYS`` (default): use delta refresh whenever it is buildable.
+       - ``NEVER``: always perform a full refresh.
+       - ``AUTOMATIC``: the cost-based optimizer chooses between delta and full refresh;
+         falls back to row-count comparison when stats are unknown.
+     - Yes
+     - Yes
    * - .. _iceberg-sess-max-partitions-per-writer:
 
        ``max_partitions_per_writer``
@@ -625,6 +665,13 @@ Session properties set behavior changes for queries executed within the given se
        ``iceberg.max-partitions-per-writer`` in the current session.
      - Yes
      - No
+   * - .. _iceberg-sess-aggregate-push-down-enabled:
+
+       ``aggregate_push_down_enabled``
+     - Overrides the behavior of the connector property
+       ``iceberg.aggregate-push-down-enabled`` in the current session.
+     - Yes
+     - Yes
 
 Caching Support
 ---------------
@@ -674,8 +721,7 @@ JMX query to get the metrics and verify the cache usage::
 
     Manifest file cache statistics are only available through the JMX connector when the Iceberg connector is configured with a HIVE catalog type.
 
-Presto C++ Support
-~~~~~~~~~~~~~~~~~~
+.. rubric:: Presto C++ Support
 
 Manifest file caching is supported in Presto C++.
 
@@ -702,8 +748,7 @@ JMX queries to get the metrics and verify the cache usage::
 
     SHOW TABLES FROM jmx.current like '%alluxio%';
 
-Presto C++ Support
-~~~~~~~~~~~~~~~~~~
+.. rubric:: Presto C++ Support
 
 Alluxio data caching is applicable for Presto Java. Async data cache is supported in Presto C++. See :ref:`async_data_caching_and_prefetching`.
 
@@ -738,8 +783,7 @@ JMX queries to get the metrics and verify the cache usage::
 
     SELECT * FROM jmx.current."com.facebook.presto.hive:name=iceberg_parquetmetadata,type=cachestatsmbean";
 
-Presto C++ Support
-~~~~~~~~~~~~~~~~~~
+.. rubric:: Presto C++ Support
 
 File and stripe footer cache is not applicable for Presto C++.
 
@@ -832,8 +876,84 @@ When this column is used, deleted rows will not be filtered out of the results.
      file:/path/to/table/data/delete_file_d8510b3e-510a-4fc2-b2b2-e59ead7fd386.parquet |         0
      NULL                                                                              |         1
 
-Presto C++ Support
-^^^^^^^^^^^^^^^^^^
+Row Lineage Columns
+^^^^^^^^^^^^^^^^^^^
+
+Iceberg format version 3 introduces row lineage: two metadata columns that allow
+you to trace the origin of every row back to a specific file and snapshot.
+These columns are ``NULL`` for tables that use format version 1 or 2.  When an
+existing V1/V2 table is upgraded to V3, Iceberg automatically backfills the
+``firstRowId`` metadata on all existing data files so that the columns become
+non-``NULL`` for every row, including rows written before the upgrade.
+See the `Iceberg spec — Row Lineage <https://iceberg.apache.org/spec/#row-lineage>`_ for the full specification.
+
+.. note::
+
+   Presto supports **reading** row lineage columns only.  Writing
+   row lineage metadata (assigning ``_row_id`` and
+   ``_last_updated_sequence_number`` when inserting or updating rows) is not
+   supported.
+
+``_row_id`` column
+~~~~~~~~~~~~~~~~~~
+A globally unique, monotonically increasing ``BIGINT`` identifier for each row.
+The value is derived from the data file's ``firstRowId`` (stored in the Iceberg
+manifest) plus the row's ordinal position within that file
+(``firstRowId + position_in_file``).  Row IDs are stable across reads and are
+unique within the table at any given point in time.
+
+.. code-block:: sql
+
+    SELECT _row_id, id, value FROM my_v3_table ORDER BY _row_id;
+
+.. code-block:: text
+
+     _row_id | id | value
+    ---------+----+-------
+           0 |  1 | one
+           1 |  2 | two
+
+For V1/V2 tables, the column returns ``NULL``:
+
+.. code-block:: sql
+
+    SELECT _row_id FROM my_v2_table ORDER BY id;
+
+.. code-block:: text
+
+     _row_id
+    ---------
+     NULL
+     NULL
+
+``_last_updated_sequence_number`` column
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The Iceberg data sequence number of the snapshot in which this row was last
+written (inserted or updated).  All rows written in the same ``APPEND`` or
+``OVERWRITE`` commit share the same sequence number.  Later commits produce
+higher sequence numbers, so you can use this column to determine the relative
+write order of rows across snapshots.
+
+.. code-block:: sql
+
+    SELECT _last_updated_sequence_number, id, value
+    FROM my_v3_table
+    ORDER BY _row_id;
+
+.. code-block:: text
+
+     _last_updated_sequence_number | id | value
+    -------------------------------+----+-------
+                                 1 |  1 | one
+                                 2 |  2 | two
+
+The example above shows two rows written in separate commits: ``id = 1`` was
+committed first (sequence number 1) and ``id = 2`` was committed next (sequence
+number 2).
+
+For V1/V2 tables, the column returns ``NULL``.
+
+.. rubric:: Presto C++ Support
 
 All above metadata columns are supported in Presto C++.
 
@@ -1033,8 +1153,7 @@ Provides metadata log entries for the table.
      2024-12-28 23:42:42.207 Asia/Kolkata      | hdfs://localhost:9000/user/hive/warehouse/iceberg_schema.db/region1/metadata/00001-61151efc-0e01-4a47-a5e6-7b72749cc4a8.metadata.json | 5841566266546816471 |                0 |                      2
      2024-12-28 23:42:47.591 Asia/Kolkata      | hdfs://localhost:9000/user/hive/warehouse/iceberg_schema.db/region1/metadata/00002-d4a9c326-5053-4a26-9082-d9fbf1d6cd14.metadata.json | 6894018661156805064 |                0 |                      3
 
-Presto C++ Support
-^^^^^^^^^^^^^^^^^^
+.. rubric:: Presto C++ Support
 
 All above metadata tables, except `$changelog`, are supported in Presto C++.
 
@@ -1092,9 +1211,9 @@ Examples:
 
   .. note::
 
-    When registering a table with the Hive metastore, the user calling the procedure 
-    is set as the owner of the table and has ``SELECT``, ``INSERT``, ``UPDATE``, and 
-    ``DELETE`` privileges for that table. These privileges can be altered using the 
+    When registering a table with the Hive metastore, the user calling the procedure
+    is set as the owner of the table and has ``SELECT``, ``INSERT``, ``UPDATE``, and
+    ``DELETE`` privileges for that table. These privileges can be altered using the
     ``GRANT`` and ``REVOKE`` commands.
 
   .. note::
@@ -1518,8 +1637,7 @@ Examples:
 
     CALL iceberg.system.rewrite_manifests('schema_name', 'table_name', 0);
 
-Presto C++ Support
-^^^^^^^^^^^^^^^^^^
+.. rubric:: Presto C++ Support
 
 All above procedures are supported in Presto C++.
 
@@ -1592,20 +1710,20 @@ frequently used together in query predicates.
 SQL Support
 -----------
 
-==================================== ============= ============ ============================================================================
-SQL Operation                        Presto Java   Presto C++   Comments
-==================================== ============= ============ ============================================================================
-``CREATE SCHEMA``                    Yes           Yes
+======================================== ============= ============ ============================================================================
+SQL Operation                            Presto Java   Presto C++   Comments
+======================================== ============= ============ ============================================================================
+``CREATE SCHEMA``                        Yes           Yes
 
-``CREATE TABLE``                     Yes           Yes
+``CREATE TABLE``                         Yes           Yes
 
-``CREATE VIEW``                      Yes           Yes
+``CREATE VIEW``                          Yes           Yes
 
-``INSERT INTO``                      Yes           No
+``INSERT INTO``                          Yes           No
 
-``CREATE TABLE AS SELECT``           Yes           No
+``CREATE TABLE AS SELECT``               Yes           No
 
-``SELECT``                           Yes           Yes          Read is supported in Presto C++ including those with positional delete files.
+``SELECT``                               Yes           Yes          Read is supported in Presto C++ including those with positional delete files.
 
 ``ALTER TABLE``                              Yes           Yes
 
@@ -1615,26 +1733,26 @@ SQL Operation                        Presto Java   Presto C++   Comments
 
 ``ALTER VIEW``                               Yes           Yes
 
-``TRUNCATE``                         Yes           Yes
+``TRUNCATE``                             Yes           Yes
 
-``DELETE``                           Yes           No
+``DELETE``                               Yes           No
 
-``DROP TABLE``                       Yes           Yes
+``DROP TABLE``                           Yes           Yes
 
-``DROP VIEW``                        Yes           Yes
+``DROP VIEW``                            Yes           Yes
 
-``DROP SCHEMA``                      Yes           Yes
+``DROP SCHEMA``                          Yes           Yes
 
-``SHOW CREATE TABLE``                Yes           Yes
+``SHOW CREATE TABLE``                    Yes           Yes
 
-``SHOW COLUMNS``                     Yes           Yes
+``SHOW COLUMNS``                         Yes           Yes
 
-``DESCRIBE``                         Yes           Yes
+``DESCRIBE``                             Yes           Yes
 
-``UPDATE``                           Yes           No
+``UPDATE``                               Yes           No
 
-``MERGE``                            Yes           No
-==================================== ============= ============ ============================================================================
+``MERGE``                                Yes           No
+======================================== ============= ============ ============================================================================
 
 The Iceberg connector supports querying and manipulating Iceberg tables and schemas
 (databases). Here are some examples of the SQL operations supported by Presto:
@@ -1773,8 +1891,7 @@ Transform Name        Source Types
 ``Hour``              ``timestamp``
 ===================== =======================================================================
 
-Presto C++ Support
-~~~~~~~~~~~~~~~~~~
+.. rubric:: Presto C++ Support
 
 Reads from tables with partition column transforms is supported in Presto C++.
 
@@ -1919,8 +2036,9 @@ ADD COLUMN with DEFAULT (Iceberg V3)
 
     ``ADD COLUMN DEFAULT`` read support is available in both **Presto Java** and **Presto C++** (Prestissimo).
     Both engines execute the DDL, store the default in Iceberg metadata, and inject the ``initial-default``
-    value during reads for historical rows. Write-time handling of ``write-default`` is not supported
-    in either engine.
+    value during reads for historical rows. In addition, **Presto Java** supports write-time handling of
+    ``write-default`` for omitted columns during ``INSERT`` into Iceberg V3 tables. **Presto C++** does not
+    support this behavior.
 
 Iceberg Format Version 3 supports default column values for schema evolution. When a column is
 added with a ``DEFAULT`` clause, Presto sets both the ``initial-default`` and ``write-default``
@@ -1950,9 +2068,9 @@ ALTER COLUMN SET DEFAULT (Iceberg V3)
 
 .. note::
 
-    ``ALTER COLUMN SET DEFAULT`` currently only updates the Iceberg metadata (``write-default`` field).
-    **INSERT support for write-default is not implemented** — inserts will not automatically use
-    the write-default value.
+    ``ALTER COLUMN SET DEFAULT`` updates the Iceberg metadata (``write-default`` field).
+    In **Presto Java**, subsequent ``INSERT`` statements use the ``write-default`` value for omitted
+    columns. **Presto C++** does not yet support write-default materialization during ``INSERT``.
 
 Iceberg Format Version 3 allows updating the ``write-default`` value for an existing column without
 modifying the ``initial-default``. This is useful for schema evolution and maintaining compatibility
@@ -1970,8 +2088,10 @@ Example — Update the ``write-default`` for the ``country`` column::
 
      ALTER TABLE iceberg.web.orders ALTER COLUMN country SET DEFAULT 'US';
 
-After this statement, the Iceberg metadata is updated, but **INSERT operations do not yet use the
-write-default value automatically**. This functionality will be added in a future release.
+After this statement, the Iceberg metadata is updated. In **Presto Java**, subsequent ``INSERT``
+operations use the ``write-default`` value for omitted columns, while explicit ``NULL`` values are
+preserved as ``NULL``. In **Presto C++**, ``INSERT`` operations do not yet use the ``write-default``
+value automatically.
 
 This feature requires Iceberg Format Version 3. Attempting to use ``ALTER COLUMN SET DEFAULT`` on
 a table with format version 2 or lower will result in an error.
@@ -2297,8 +2417,7 @@ schema evolution, such as adding, dropping, and renaming columns. With schema
 evolution, users can evolve a table schema with SQL after enabling the Presto
 Iceberg connector.
 
-Presto C++ Support
-^^^^^^^^^^^^^^^^^^
+.. rubric:: Presto C++ Support
 
 Schema evolution is supported in Presto C++.
 
@@ -2309,10 +2428,9 @@ Presto now supports Parquet writer versions V1 and V2 for the Iceberg catalog.
 It can be toggled using the session property ``parquet_writer_version`` and the config property ``hive.parquet.writer.version``.
 Valid values for these properties are ``PARQUET_1_0`` and ``PARQUET_2_0``. Default is ``PARQUET_1_0``.
 
-Presto C++ Support
-^^^^^^^^^^^^^^^^^^
+.. rubric:: Presto C++ Support
 
- Reading Parquet data written with Parquet writer version V1 is supported in Presto C++.
+Reading Parquet data written with Parquet writer version V1 is supported in Presto C++.
 
 Example Queries
 ^^^^^^^^^^^^^^^
@@ -2656,7 +2774,7 @@ The quotes are required to prevent the SQL parser from interpreting the dot as a
 
     -- Create a branch first
     ALTER TABLE orders CREATE BRANCH 'audit_branch';
-    
+
     -- Insert data into the branch
     INSERT INTO "orders.branch_audit_branch" VALUES (1, 'Product A', 100.00);
     INSERT INTO "orders.branch_audit_branch" VALUES (2, 'Product B', 200.00);
@@ -2667,7 +2785,7 @@ The quotes are required to prevent the SQL parser from interpreting the dot as a
 
     -- Update specific rows in the branch
     UPDATE "orders.branch_audit_branch" SET price = 120.00 WHERE id = 1;
-    
+
     -- Update with complex expressions
     UPDATE "orders.branch_audit_branch"
     SET price = price * 1.1
@@ -2679,7 +2797,7 @@ The quotes are required to prevent the SQL parser from interpreting the dot as a
 
     -- Delete specific rows from the branch
     DELETE FROM "orders.branch_audit_branch" WHERE id = 2;
-    
+
     -- Delete with complex predicates
     DELETE FROM "orders.branch_audit_branch"
     WHERE created_date < DATE '2024-01-01';
@@ -2703,7 +2821,7 @@ After performing mutations on a branch, you can verify that the main table remai
 
     -- Query the branch to see changes
     SELECT * FROM orders FOR SYSTEM_VERSION AS OF 'audit_branch';
-    
+
     -- Query the main table (unchanged)
     SELECT * FROM orders;
 
@@ -2739,8 +2857,7 @@ Branch mutations are partially supported in Presto C++.
 
 * **Supported:** ``INSERT``, ``TRUNCATE TABLE``
 
-Presto C++ Support
-^^^^^^^^^^^^^^^^^^
+.. rubric:: Presto C++ Support
 
 Time travel queries are supported in Presto C++.
 
@@ -3022,10 +3139,18 @@ by using :doc:`/sql/alter-materialized-view`; properties not specified in the
 
        ``max_snapshots_per_refresh``
      - Upper bound on snapshots consumed per base table per ``REFRESH MATERIALIZED
-       VIEW``. Defaults to the ``materialized_view_default_max_snapshots_per_refresh``
-       session property. Requires Iceberg V3 row lineage; V2 tables fall back to
-       unbounded refresh.
+       VIEW``. ``0`` means unbounded. Defaults to the
+       ``materialized_view_default_max_snapshots_per_refresh`` session property.
+       Requires Iceberg V3 row lineage; V2 tables fall back to unbounded refresh.
      - Yes
+   * - .. _mv-prop-use-timestamp-based-staleness:
+
+       ``use_timestamp_based_staleness``
+     - Enables timestamp-based staleness detection for materialized views from non-Iceberg
+       tables where snapshot comparison is not feasible. Accepts boolean values: ``true``
+       or ``false``. This mode is automatically enabled when the engine-level property
+       ``cross_catalog_materialized_views_enabled`` is set to ``true``.
+     - No
 
 The storage table inherits standard Iceberg table properties for partitioning, sorting, and file format.
 
@@ -3043,7 +3168,7 @@ See :doc:`/admin/materialized-views` for general information on refresh behavior
 .. _iceberg-incremental-refresh:
 
 Incremental Refresh
-^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~
 
 The Iceberg connector supports incremental refresh, which atomically replaces only stale
 partitions rather than recomputing the entire result set. See :ref:`admin/materialized-views:Incremental Refresh`
@@ -3063,10 +3188,17 @@ Requirements:
 * Only ``INSERT`` operations on base tables enable partition-level staleness detection;
   ``DELETE`` or ``UPDATE`` operations cause a full refresh
 
+.. note::
+    If incremental refresh cannot be applied, the engine falls back to a full refresh
+    and emits a warning. ``DELETE`` or ``UPDATE`` on a base table also forces a full
+    refresh — the Iceberg connector only tracks partition-level staleness for
+    append-only changes. See :ref:`admin/materialized-views:Unsupported Patterns` for
+    the full list of engine-level conditions.
+
 .. _iceberg-bounded-refresh:
 
 Bounded Refresh
-^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~
 
 Bounded refresh caps how far each base table advances per ``REFRESH MATERIALIZED VIEW``,
 splitting catch-up into a series of smaller refreshes. Each refresh advances each base's
@@ -3121,9 +3253,11 @@ rather than the entire view. See :doc:`/admin/materialized-views` for details on
 predicate stitching works.
 
 .. note::
-    Partition-level staleness detection only works for append-only changes (INSERT).
-    DELETE or UPDATE operations on base tables cause the entire view to be treated
-    as stale, requiring full recomputation.
+    If stitching cannot be applied, the engine falls back to a full recompute and emits
+    a warning. ``DELETE`` or ``UPDATE`` on a base table also forces a full recompute —
+    the Iceberg connector only tracks partition-level staleness for append-only changes.
+    See :ref:`admin/materialized-views:Unsupported Patterns` for the full list of
+    engine-level conditions.
 
 Example with staleness handling:
 

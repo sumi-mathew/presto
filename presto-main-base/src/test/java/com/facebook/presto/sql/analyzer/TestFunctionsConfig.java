@@ -49,11 +49,12 @@ public class TestFunctionsConfig
                 .setLegacyRowFieldOrdinalAccess(false)
                 .setLegacyTimestamp(true)
                 .setParseDecimalLiteralsAsDouble(false)
-                .setFieldNamesInJsonCastEnabled(false)
+                .setFieldNamesInJsonCastEnabled(true)
                 .setLegacyCharToVarcharCoercion(false)
                 .setLegacyJsonCast(true)
                 .setCanonicalizedJsonExtract(false)
-                .setDefaultNamespacePrefix(JAVA_BUILTIN_NAMESPACE.toString()));
+                .setDefaultNamespacePrefix(JAVA_BUILTIN_NAMESPACE.toString())
+                .setLegacyStEquals(false));
     }
 
     @Test
@@ -76,11 +77,12 @@ public class TestFunctionsConfig
                 .put("deprecated.legacy-row-field-ordinal-access", "true")
                 .put("deprecated.legacy-timestamp", "false")
                 .put("parse-decimal-literals-as-double", "true")
-                .put("field-names-in-json-cast-enabled", "true")
+                .put("field-names-in-json-cast-enabled", "false")
                 .put("deprecated.legacy-char-to-varchar-coercion", "true")
                 .put("legacy-json-cast", "false")
                 .put("presto.default-namespace", "native.default")
                 .put("canonicalized-json-extract", "true")
+                .put("legacy-st-equals", "true")
                 .build();
 
         FunctionsConfig expected = new FunctionsConfig()
@@ -100,11 +102,12 @@ public class TestFunctionsConfig
                 .setLegacyRowFieldOrdinalAccess(true)
                 .setLegacyTimestamp(false)
                 .setParseDecimalLiteralsAsDouble(true)
-                .setFieldNamesInJsonCastEnabled(true)
+                .setFieldNamesInJsonCastEnabled(false)
                 .setLegacyCharToVarcharCoercion(true)
                 .setLegacyJsonCast(false)
                 .setDefaultNamespacePrefix("native.default")
-                .setCanonicalizedJsonExtract(true);
+                .setCanonicalizedJsonExtract(true)
+                .setLegacyStEquals(true);
         assertFullMapping(properties, expected);
     }
 }

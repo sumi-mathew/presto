@@ -8,7 +8,16 @@ import tsparser from "@typescript-eslint/parser";
 
 export default [
     js.configs.recommended,
-    reactHooks.configs["recommended-latest"],
+    {
+        files: ["**/*.{js,jsx,ts,tsx}"],
+        plugins: {
+            "react-hooks": reactHooks,
+        },
+        rules: {
+            "react-hooks/rules-of-hooks": "error",
+            "react-hooks/exhaustive-deps": "warn",
+        },
+    },
     {
         ignores: [
             "**/vendor/**",

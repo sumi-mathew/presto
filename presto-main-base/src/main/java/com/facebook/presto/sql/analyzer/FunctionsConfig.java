@@ -44,11 +44,13 @@ public class FunctionsConfig
     private boolean legacyRowFieldOrdinalAccess;
     private boolean legacyTimestamp = true;
     private boolean parseDecimalLiteralsAsDouble;
-    private boolean fieldNamesInJsonCastEnabled;
+    private boolean fieldNamesInJsonCastEnabled = true;
     private boolean legacyCharToVarcharCoercion;
     private boolean legacyJsonCast = true;
     private boolean canonicalizedJsonExtract;
     private String defaultNamespacePrefix = JAVA_BUILTIN_NAMESPACE.toString();
+
+    private boolean legacyStEquals;
 
     @Config("deprecated.legacy-array-agg")
     public FunctionsConfig setLegacyArrayAgg(boolean legacyArrayAgg)
@@ -307,5 +309,17 @@ public class FunctionsConfig
     public String getDefaultNamespacePrefix()
     {
         return defaultNamespacePrefix;
+    }
+
+    @Config("legacy-st-equals")
+    public FunctionsConfig setLegacyStEquals(boolean value)
+    {
+        this.legacyStEquals = value;
+        return this;
+    }
+
+    public boolean isLegacyStEquals()
+    {
+        return legacyStEquals;
     }
 }

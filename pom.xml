@@ -10,7 +10,7 @@
 
     <groupId>com.facebook.presto</groupId>
     <artifactId>presto-root</artifactId>
-    <version>0.298-SNAPSHOT</version>
+    <version>0.299-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>presto-root</name>
@@ -44,7 +44,7 @@
         <air.maven.version>3.3.9</air.maven.version>
 
         <dep.antlr.version>4.13.2</dep.antlr.version>
-        <dep.airlift.version>0.227</dep.airlift.version>
+        <dep.airlift.version>0.230</dep.airlift.version>
         <dep.packaging.version>${dep.airlift.version}</dep.packaging.version>
         <dep.slice.version>0.38</dep.slice.version>
         <dep.testing-mysql-server-5.version>0.6</dep.testing-mysql-server-5.version>
@@ -78,13 +78,13 @@
         <dep.ratis.version>3.2.2</dep.ratis.version>
         <dep.errorprone.version>2.37.0</dep.errorprone.version>
         <dep.guava.version>32.1.0-jre</dep.guava.version>
-        <dep.jackson.version>2.15.4</dep.jackson.version>
+        <dep.jackson.version>2.18.6</dep.jackson.version>
         <dep.j2objc.version>3.0.0</dep.j2objc.version>
         <dep.avro.version>1.12.1</dep.avro.version>
         <dep.commons.compress.version>1.27.1</dep.commons.compress.version>
-        <dep.protobuf-java.version>4.30.2</dep.protobuf-java.version>
-        <dep.jetty.version>12.0.29</dep.jetty.version>
-        <dep.netty.version>4.2.13.Final</dep.netty.version>
+        <dep.protobuf-java.version>4.34.1</dep.protobuf-java.version>
+        <dep.jetty.version>12.0.34</dep.jetty.version>
+        <dep.netty.version>4.2.15.Final</dep.netty.version>
         <dep.reactor-netty.version>1.3.3</dep.reactor-netty.version>
         <dep.snakeyaml.version>2.5</dep.snakeyaml.version>
         <dep.gson.version>2.14.0</dep.gson.version>
@@ -116,7 +116,7 @@
         <dep.fastutil.version>8.5.2</dep.fastutil.version>
         <dep.datasketches-memory.version>2.2.0</dep.datasketches-memory.version>
         <dep.datasketches-java.version>5.0.1</dep.datasketches-java.version>
-        <dep.io.opentelemetry.version>1.58.0</dep.io.opentelemetry.version>
+        <dep.io.opentelemetry.version>1.62.0</dep.io.opentelemetry.version>
 
         <release.autoPublish>true</release.autoPublish>
     </properties>
@@ -242,6 +242,7 @@
         <module>presto-sql-helpers/presto-sql-invoked-functions-plugin</module>
         <module>presto-sql-helpers/presto-native-sql-invoked-functions-plugin</module>
         <module>presto-lance</module>
+        <module>presto-flight-shim</module>
     </modules>
 
     <dependencyManagement>
@@ -478,6 +479,12 @@
                 <groupId>javax.inject</groupId>
                 <artifactId>javax.inject</artifactId>
                 <version>1</version>
+            </dependency>
+
+            <dependency>
+                <groupId>javax.annotation</groupId>
+                <artifactId>javax.annotation-api</artifactId>
+                <version>1.3.2</version>
             </dependency>
 
             <dependency>
@@ -1134,7 +1141,7 @@
             <dependency>
                 <groupId>com.facebook.presto.orc</groupId>
                 <artifactId>orc-protobuf</artifactId>
-                <version>13</version>
+                <version>15</version>
             </dependency>
 
             <dependency>
@@ -1911,22 +1918,6 @@
                     <exclusion>
                         <groupId>org.apache.httpcomponents</groupId>
                         <artifactId>httpclient</artifactId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
-
-            <dependency>
-                <groupId>com.amazonaws</groupId>
-                <artifactId>aws-java-sdk-glue</artifactId>
-                <version>${dep.aws-sdk.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>commons-logging</groupId>
-                        <artifactId>commons-logging</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>joda-time</groupId>
-                        <artifactId>joda-time</artifactId>
                     </exclusion>
                 </exclusions>
             </dependency>
