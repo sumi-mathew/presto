@@ -38,7 +38,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
+import static com.facebook.presto.iceberg.rest.AuthenticationType.BASIC;
 import static com.facebook.presto.iceberg.rest.AuthenticationType.OAUTH2;
+import static com.facebook.presto.iceberg.rest.PrestoRestTLSConfigurer.KEYSTORE_PASSWORD;
+import static com.facebook.presto.iceberg.rest.PrestoRestTLSConfigurer.KEYSTORE_PATH;
+import static com.facebook.presto.iceberg.rest.PrestoRestTLSConfigurer.TLS_CONFIGURER_IMPL;
+import static com.facebook.presto.iceberg.rest.PrestoRestTLSConfigurer.TRUSTSTORE_PASSWORD;
+import static com.facebook.presto.iceberg.rest.PrestoRestTLSConfigurer.TRUSTSTORE_PATH;
 import static com.facebook.presto.iceberg.rest.SessionType.USER;
 import static com.google.common.base.Throwables.throwIfInstanceOf;
 import static com.google.common.base.Throwables.throwIfUnchecked;
@@ -47,6 +53,10 @@ import static java.util.Objects.requireNonNull;
 import static java.util.UUID.randomUUID;
 import static org.apache.iceberg.CatalogProperties.URI;
 import static org.apache.iceberg.CatalogUtil.configureHadoopConf;
+import static org.apache.iceberg.rest.auth.AuthProperties.AUTH_TYPE;
+import static org.apache.iceberg.rest.auth.AuthProperties.AUTH_TYPE_BASIC;
+import static org.apache.iceberg.rest.auth.AuthProperties.BASIC_PASSWORD;
+import static org.apache.iceberg.rest.auth.AuthProperties.BASIC_USERNAME;
 import static org.apache.iceberg.rest.auth.OAuth2Properties.CREDENTIAL;
 import static org.apache.iceberg.rest.auth.OAuth2Properties.JWT_TOKEN_TYPE;
 import static org.apache.iceberg.rest.auth.OAuth2Properties.OAUTH2_SERVER_URI;
@@ -116,6 +126,14 @@ public class IcebergRestCatalogFactory
         properties.put(URI, catalogConfig.getServerUri().orElseThrow(
                 () -> new IllegalStateException("iceberg.rest.uri must be set for REST catalog")));
 
+        if (catalogConfig.isTlsEnabled()) {
+            properties.put(TLS_CONFIGURER_IMPL, PrestoRestTLSConfigurer.class.getName());
+            catalogConfig.getKeystorePath().ifPresent(path -> properties.put(KEYSTORE_PATH, path));
+            catalogConfig.getKeystorePassword().ifPresent(password -> properties.put(KEYSTORE_PASSWORD, password));
+            catalogConfig.getTruststorePath().ifPresent(path -> properties.put(TRUSTSTORE_PATH, path));
+            catalogConfig.getTruststorePassword().ifPresent(password -> properties.put(TRUSTSTORE_PASSWORD, password));
+        }
+
         catalogConfig.getAuthenticationType().ifPresent(type -> {
             if (type == OAUTH2) {
                 // The oauth2/tokens endpoint of the REST catalog spec has been deprecated and will
@@ -129,6 +147,15 @@ public class IcebergRestCatalogFactory
                 catalogConfig.getCredential().ifPresent(credential -> properties.put(CREDENTIAL, credential));
                 catalogConfig.getToken().ifPresent(token -> properties.put(TOKEN, token));
                 catalogConfig.getScope().ifPresent(scope -> properties.put(SCOPE, scope));
+            }
+            if (type == BASIC) {
+                String basicAuthUsername = catalogConfig.getBasicAuthUsername().orElseThrow(
+                        () -> new IllegalStateException("iceberg.rest.auth.basic.username must be set for REST catalog when BASIC authentication is enabled"));
+                String basicAuthPassword = catalogConfig.getBasicAuthPassword().orElseThrow(
+                        () -> new IllegalStateException("iceberg.rest.auth.basic.password must be set for REST catalog when BASIC authentication is enabled"));
+                properties.put(AUTH_TYPE, AUTH_TYPE_BASIC);
+                properties.put(BASIC_USERNAME, basicAuthUsername);
+                properties.put(BASIC_PASSWORD, basicAuthPassword);
             }
         });
 
